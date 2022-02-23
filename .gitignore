@@ -30,3 +30,17 @@
 *.exe
 *.out
 *.app
+
+SHA256
+openssl
+
+*.jpg
+*.png
+
+100*leaves*plant*species/*
+joblete
+cryptogams
+joblete
+subtrajectory_clustering-master
+outside/*
+
