@@ -1,0 +1,170 @@
+//-- LIBRARIES
+
+const MOPS = import("matrix_ops")
+const VFUNCS = import("vector_functions")
+
+//-- DEFS
+
+const sigmoid = VFUNCS.sigmoid
+const softmax = VFUNCS.softmax
+const exp = VFUNCS.exp
+const log = VFUNCS.log
+
+//-- FUNCTIONAL SUPPORT
+
+<cross_entropy> :: (Vect<R>,Vect<R>) |-> <R>
+//
+func cross_entropy(o, y) {
+    <R> c = (y .* np.log(o)) + ((1 - y) .* log(1 - o))
+    :)-> -c
+}
+
+<sigmoid> :: (Vect<R>) |-> Vect<R>
+//
+func sigmoid(x) {
+    <R> nex = exp(-x)
+    :)->  1 / (1 + nex)
+}
+
+<sigmoid_derivitive> :: (Vect<R>) |-> Vect<R>
+//
+func sigmoid_derivitive(x) {
+    <R> nex = exp(-x)
+    <R> dom = nex*(nex + 2) + 1
+    :)-> (nex / dom)
+}
+
+<softmax> :: (Vect<R>) |-> Vect<R>
+//
+func softmax(x) {
+    Vect<R> exp_shifted = exp(x - MOPS.max(x))
+    <R> SUM = .Sigma(exp_shifted)
+    :)->  exp_shifted / SUM
+}
+
+<softmax> :: (Vect<R>) |-> Vect<R>
+//
+func softmax_derivative(x) {
+    Vect<R> exp_shifted = exp(x - MOPS.max(x))
+    <R> SUM = .Sigma(exp_shifted)
+    <R> ratio = (exp_shifted / SUM)
+    :)-> ratio * (1 - ratio)
+}
+
+//-- ALGORITHMIC
+
+<single_pass> :: (<Indexable>, Vect<R>, Vect<{Func(<Vect<R>>) |-> Vect<R>>}>) |-> Vect<R>
+//
+func single_pass( Ws, input, op ) {
+    Vect<R> out = input
+    g_layers[0].evals = input
+    .for up ( Ws W .ith <Z> l ) {  // for layer
+        out = W .* out // matrix inner products
+        let k = l+1
+        g_layers[k].evals = out
+        out = op[l](out)  // vector matrix multiplication
+        g_layers[k].outputs = out
+    }
+    :)-> out
+}
+
+<backward_pass> :: (<Indexable>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>>}>) |-> <void>
+//
+func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
+    //
+    <Z> l = (n_layers - 1)
+    g_layers[l].diff = y_difference
+    .for down ( Ws W .ith <Z> l > 0 ) {  // for layer
+        let k = l-1
+        let backwards = W .* g_layers[l].diff           // matrix inner products
+        g_layers[k].diff = backwards * derivitive_op[l]
+        g_layers[k].tensor = g_layers[l].diff .(X) g_layers[l].outputs
+    }
+    //
+}
+
+//-- ACTION
+
+//-- CONFIG
+let config = prog_ops.load_config("parameters")
+Vect<Z> rc_sizes = config.layer_sizes // array dimensions (row,colum sizes)
+
+//-- OPS
+const forward_ops = [...fill(rc_sizes.N-2,sigmoid),softmax]
+const derivitive_ops = [softmax_derivitive,...fill(rc_sizes.N-2,sigmoid_derivitive)]
+
+//-- LAYERS
+let g_layers = [...fill(rc_sizes.N,{evals,outputs,diff,tensor})]
+let layer_matrices = for ( <Z> i in [0,(rc_sizes.N - 1)) .with <Z> j = (i+1) ) MOPS.random_matrix(rc_sizes[i],rc_sizes[j])
+let LM_tpz = .map ( layer_matrices W ) MPOS.transpose(W)
+
+//-- DATA SOURCE
+let training_stream = prog_ops.source(config.taining_set)
+let supervizor_set = prog_ops.load_data(config.labeled)
+
+//-- TRAINING
+const Z<[,)> epochs = [0,5)
+const <R> t_rate = 0.001
+//
+.while ( Vect<R> input .from training_stream ) {
+    .for up (epochs) {
+        .for each ( supervizor_set y_train ) {
+            //
+            let output = single_pass(LM_tpz, input, forward_ops)
+            let y_difference = (outputs - y_train)
+            //
+            backward_pass(LM_tpz,output,y_difference,n_layers,derivitive_ops)
+            //
+            .for up ( LM_tpz W .ith <Z> l ) {  // for layer l ... construct always uses ref
+                W -= t_rate * g_layers[l].tensor
+            }
+            //
+        }
+    }
+}
+
+
+//-- SAVE
+prog_ops.save_matrix_list(LM_tpz)
+
+
+
+
+
+
+
+
+
+/*
+
+R<[,]> r = [0.0,pi]
+//
+.for up{0.005} r {
+
+}
+
+
+// // // // // // // // // // // // //
+
+def part_cost(o, y):
+    c = np.dot(y, np.log(o)) + np.dot((1 - y), np.log(1 - o))
+    return -c
+
+
+def sigmoid(x, derivative = False):
+    if derivative:
+        return np.exp(-x) / ((np.exp(-x) + 1) ** 2)
+    else:
+        return 1 / (1 + np.exp(-x))
+
+
+def softmax(x, derivative = False):
+    # for stability, we shift values down so max = 0
+    # https://cs231n.github.io/linear-classify/#softmax
+    exp_shifted = np.exp(x - x.max())
+    if derivative:
+        return exp_shifted / np.sum(exp_shifted, axis = 0) * (1 - exp_shifted / np.sum(exp_shifted, axis = 0))
+    else:
+        return exp_shifted / np.sum(exp_shifted, axis = 0)
+
+*/
