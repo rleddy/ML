@@ -53,7 +53,7 @@ func softmax_derivative(x) {
 
 //-- ALGORITHMIC
 
-<single_pass> :: (<Indexable>, Vect<R>, Vect<{Func(<Vect<R>>) |-> Vect<R>>}>) |-> Vect<R>
+<single_pass> :: (<Indexable>, Vect<R>, Vect<{Func(Vect<R>) |-> Vect<R>}>) |-> Vect<R>
 //
 func single_pass( Ws, input, op ) {
     Vect<R> out = input
@@ -68,7 +68,7 @@ func single_pass( Ws, input, op ) {
     :)-> out
 }
 
-<backward_pass> :: (<Indexable>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>>}>) |-> <void>
+<backward_pass> :: (<Indexable>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>}>) |-> <void>
 //
 func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
     //
@@ -142,29 +142,5 @@ R<[,]> r = [0.0,pi]
 .for up{0.005} r {
 
 }
-
-
-// // // // // // // // // // // // //
-
-def part_cost(o, y):
-    c = np.dot(y, np.log(o)) + np.dot((1 - y), np.log(1 - o))
-    return -c
-
-
-def sigmoid(x, derivative = False):
-    if derivative:
-        return np.exp(-x) / ((np.exp(-x) + 1) ** 2)
-    else:
-        return 1 / (1 + np.exp(-x))
-
-
-def softmax(x, derivative = False):
-    # for stability, we shift values down so max = 0
-    # https://cs231n.github.io/linear-classify/#softmax
-    exp_shifted = np.exp(x - x.max())
-    if derivative:
-        return exp_shifted / np.sum(exp_shifted, axis = 0) * (1 - exp_shifted / np.sum(exp_shifted, axis = 0))
-    else:
-        return exp_shifted / np.sum(exp_shifted, axis = 0)
 
 */
