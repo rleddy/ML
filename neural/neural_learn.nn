@@ -22,15 +22,15 @@ func cross_entropy(o, y) {
 <sigmoid> :: (Vect<R>) |-> Vect<R>
 //
 func sigmoid(x) {
-    <R> nex = exp(-x)
+    Vect<R> nex = exp(-x)
     :)->  1 / (1 + nex)
 }
 
 <sigmoid_derivitive> :: (Vect<R>) |-> Vect<R>
 //
 func sigmoid_derivitive(x) {
-    <R> nex = exp(-x)
-    <R> dom = nex*(nex + 2) + 1
+    Vect<R> nex = exp(-x)
+    Vect<R> dom = nex*(nex + 2) + 1
     :)-> (nex / dom)
 }
 
@@ -47,8 +47,8 @@ func softmax(x) {
 func softmax_derivative(x) {
     Vect<R> exp_shifted = exp(x - MOPS.max(x))
     <R> SUM = .Sigma(exp_shifted)
-    <R> ratio = (exp_shifted / SUM)
-    :)-> ratio * (1 - ratio)
+    Vect<R> ratio = (exp_shifted / SUM) // divide vector by scalar
+    :)-> ratio * (1 - ratio)            // pairwize multiply
 }
 
 //-- ALGORITHMIC
@@ -59,10 +59,10 @@ func single_pass( Ws, input, op ) {
     Vect<R> out = input
     g_layers[0].evals = input
     .for up ( Ws W .ith <Z> l ) {  // for layer
-        out = W .* out // matrix inner products
+        out = W .* out // matrix inner products (i.e. matrix by vector)
         let k = l+1
         g_layers[k].evals = out
-        out = op[l](out)  // vector matrix multiplication
+        out = op[l](out)  // vector transformation scalar function applied to each coordinate entry
         g_layers[k].outputs = out
     }
     :)-> out
@@ -74,11 +74,10 @@ func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
     //
     <Z> l = (n_layers - 1)
     g_layers[l].diff = y_difference
-    .for down ( Ws W .ith <Z> l > 0 ) {  // for layer
-        let k = l-1
-        let backwards = W .* g_layers[l].diff           // matrix inner products
-        g_layers[k].diff = backwards * derivitive_op[l]
-        g_layers[k].tensor = g_layers[l].diff .(X) g_layers[l].outputs
+    .for down ( Ws W .ith <Z> l > 0 .with <Z> k = (l-1) ) {  // for layer
+        let backwards = W .* g_layers[l].diff               // matrix inner products  (i.e. matrix by vector)
+        g_layers[k].diff = backwards * derivitive_op[l](g_layers[k].evals)   // 
+        g_layers[k].tensor = g_layers[l].diff .(X) g_layers[k].outputs  // kronecker
     }
     //
 }
