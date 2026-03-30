@@ -94,7 +94,7 @@ const derivitive_ops = [softmax_derivitive,...fill(rc_sizes.N-2,sigmoid_deriviti
 
 //-- LAYERS
 let g_layers = [...fill(rc_sizes.N,{evals,outputs,diff,tensor})]
-let layer_matrices = for ( <Z> i in [0,(rc_sizes.N - 1)) .with <Z> j = (i+1) ) MOPS.random_matrix(rc_sizes[i],rc_sizes[j])
+let layer_matrices = .for generate ( <Z> i in [0,(rc_sizes.N - 1)) .with <Z> j = (i+1) ) MOPS.random_matrix(rc_sizes[i],rc_sizes[j])
 let LM_tpz = .map ( layer_matrices W ) MPOS.transpose(W)
 
 //-- DATA SOURCE
