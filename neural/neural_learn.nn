@@ -15,7 +15,7 @@ const log = VFUNCS.log
 <cross_entropy> :: (Vect<R>,Vect<R>) |-> <R>
 //
 func cross_entropy(o, y) {
-    <R> c = (y .* np.log(o)) + ((1 - y) .* log(1 - o))
+    <R> c = (y .* log(o)) + ((1 - y) .* log(1 - o))
     :)-> -c
 }
 
@@ -42,7 +42,7 @@ func softmax(x) {
     :)->  exp_shifted / SUM
 }
 
-<softmax> :: (Vect<R>) |-> Vect<R>
+<softmax_derivative> :: (Vect<R>) |-> Vect<R>
 //
 func softmax_derivative(x) {
     Vect<R> exp_shifted = exp(x - MOPS.max(x))
@@ -58,11 +58,11 @@ func softmax_derivative(x) {
 func single_pass( Ws, input, op ) {
     Vect<R> out = input
     g_layers[0].evals = input
-    .for up ( Ws W .ith <Z> l ) {  // for layer
-        out = W .* out // matrix inner products (i.e. matrix by vector)
+    .for up ( Ws W .ith <Z> l ) {   // for layer
+        out = W .* out              // matrix inner products (i.e. matrix by vector)
         let k = l+1
         g_layers[k].evals = out
-        out = op[l](out)  // vector transformation scalar function applied to each coordinate entry
+        out = op[l](out)            // vector transformation scalar function applied to each coordinate entry
         g_layers[k].outputs = out
     }
     :)-> out
@@ -85,7 +85,11 @@ func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
 //-- ACTION
 
 //-- CONFIG
-let config = prog_ops.load_config("parameters")
+
+prog_ops.load_config("parameters")
+//
+let config = prog_ops.config()
+
 Vect<Z> rc_sizes = config.layer_sizes // array dimensions (row,colum sizes)
 
 //-- OPS
@@ -138,8 +142,68 @@ prog_ops.save_matrix_list(LM_tpz)
 
 R<[,]> r = [0.0,pi]
 //
-.for up{0.005} r {
+.for up{0.005} r {}
 
+Z<[,)> i = [0,10)
+.for up{1} i {
 }
+// same as above
+.for up i {
+}
+
+Z<[,)> j = [0,10)
+.for up{2} j {
+}
+
+
+Z<[,)> k = [0,10)
+.while up{2} k @ 'up1' {
+    let jj = Math.exp(k)
+    out_q << `Testing ${j}`
+    .test {k} 
+    .'up1'
+    out_q << `Where k has been set to ${k}`
+}
+
+
+Z<[,)> k = [0,10)
+.while up{2} k @ 'up_a', up k @ 'up_b' {
+    let jj = Math.exp(k)
+    out_q << `Testing ${jj}`
+    .'up_a'
+    .test {k}
+    .'up_b'
+    out_q << `Where k has been set to ${k}`
+}
+
+
+Z<[,)> k = [0,10)
+.while up{2} k {
+    let jj = Math.exp(k)
+    out_q << `Testing ${jj}`
+    out_q << `Where k has been set to ${k}`
+}
+
+
+Z<[,)> k = [0,10)
+.while up{2} k {
+    <R> jj = Math.exp(k)
+    out_q << `Testing ${jj}`
+    //
+    Z<[,]> l = [0,10]
+    .while up l @ 'up_c' {
+        <R> jj = Math.exp(l)
+        out_q << `Testing ${jj}`
+        .'up_c'
+        .test {l} break :all:
+        .if (l >= k) break
+        out_q << `Where l has been set to ${l}`
+    }
+    //
+    out_q << `Where k has been set to ${k}`
+}
+
+
+out_q.flush()
 
 */

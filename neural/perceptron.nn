@@ -1,0 +1,135 @@
+
+/** Note: 
+    A perceptron is a linear binary classifier
+*/
+
+//-- LIBRARIES
+
+const MOPS = import("matrix_ops")
+const VFUNCS = import("vector_functions")
+const outs = import("console")
+
+
+//-- DEFS
+
+<Perceptron> :: (<Z> DIM,<Z> epochs,<R> learning_rate) |-> <Perceptron>
+<Perceptron.forward> :: (Vect<R> input) |-> <R>
+<Perceptron.backward> :: (<R> error,Vect<R> input) |-> <>
+<Perceptron.learn> :: (Stream<Vect<R>> inputs,Vect<R> labels) |-> <>
+<Perceptron.test> :: (Stream<Vect<R>> inputs) |-> <>
+
+
+//-- CLASSES
+
+<Perceptron> .extends <O> (DIM, epochs, learning_rate) {
+    
+    // Hyperparameters
+    ^!.<Z> learning_rate =  learning_rate
+    ^!.<Z> epochs =         [0,num_epochs)
+    
+    // Network
+    ^!.Vect<R,DIM>          weights = [...0.0]
+    ^!.<R>                  bias = 0
+    //
+
+} .methods {
+
+    forward(input) {
+        <R> layer_output = (input .* .O.weights) .+ .O.bias
+        :)->  ((layer_output) > 0 ? 1 : 0)
+    }
+
+    backward(error, input) {
+        .O.weights += .O.learning_rate * (error * input)
+        .O.bias += .O.learning_rate * error
+    }
+
+    learn(training_stream,labels) {
+        //
+        .for up (epochs) {
+            .while ( Vect<R> input .from training_stream ) {
+                .for each ( labels <R> label ) {
+                    <R> prediction = .O.forward(input)
+                    <R> error = (label - prediction)
+                    .O.backward(error, input)   // update member variables
+                }
+            }
+            training_stream.reset()
+        }
+    }
+
+    test(inputs_stream, labels) {
+        .while ( Vect<R> input .from inputs_stream ) {
+            <R> prediction = .O.forward(input)
+            outs.line(`Input: ${input}, Prediction: ${prediction}, Label: ${label}`)
+        }
+    }
+
+}
+
+
+
+
+//-- ACTION
+
+//-- CONFIG
+let config = prog_ops.load_config("parameters")
+Vect<Z> rc_sizes = config.layer_sizes // array dimensions (row,colum sizes)
+
+//-- DATA SOURCE
+let training_stream = prog_ops.source(config.taining_set)
+let supervizor_set = prog_ops.load_data(config.labeled)
+
+
+let DIM = 2, epochs = 1_000, learning_rate = 0.01
+
+// TRAINING
+let perceptron_calc = .dram<Perceptron>(DIM, epochs, learning_rate)
+
+// TESTING
+perceptron_calc.learn(training_stream,supervizor_set)
+
+
+
+/*
+
+prog_ops.load_config("parameters")
+
+<Perceptron2> :: (<Z> DIM,<Z> epochs,<R> learning_rate) |-> <Perceptron2>
+<Perceptron2> :: (<Z> DIM,<Z> epochs,<R> learning_rate,Vect<R> use_weights) |-> <Perceptron2>
+
+<Perceptron2> .extends <Perceptron> .mixin <Alpha,Beta,Zeta>
+//
+(DIM, epochs, learning_rate) {
+    super(DIM, epochs, learning_rate)
+    ^!.Vect<R>      special_weights = prog_ops.config("weights")
+}
+.&&&
+//
+(DIM, epochs, learning_rate, use_weights) {
+    super(DIM, epochs, learning_rate)
+    ^!.Vect<R>      special_weights = use_weights
+} .methods {
+
+}
+
+
+
+
+let perceptron_recalc1 = .dram<Perceptron2>(DIM, epochs, learning_rate)
+let perceptron_recalc2 = .cache<Perceptron2>(DIM, epochs, learning_rate)
+
+let perceptron_recalc3 = .gpu_share<Perceptron2>(DIM, epochs, learning_rate)
+
+let perceptron_recalc4 = .stack<Perceptron2>(DIM, epochs, learning_rate)
+
+Vect<R> weights = prog_ops.config("weights")
+
+SortedQueue<Perceptron2> my_container;
+
+let perceptron_recalc5 = .container(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights)
+let perceptron_recalc6 = .container.front(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights.copy())
+let perceptron_recalc7 = .container.back(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights.copy())
+let perceptron_recalc7 = .container.insert(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights.copy())
+
+*/
