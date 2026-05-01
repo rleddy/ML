@@ -7,16 +7,16 @@
 
 const MOPS = import("matrix_ops")
 const VFUNCS = import("vector_functions")
-const outs = import("console")
+const outs = import("console")          // const outs = import("WS") // web sockets
 
 
 //-- DEFS
 
-<Perceptron> :: (<Z> DIM,<Z> epochs,<R> learning_rate) |-> <Perceptron>
-<Perceptron.forward> :: (Vect<R> input) |-> <R>
-<Perceptron.backward> :: (<R> error,Vect<R> input) |-> <>
-<Perceptron.learn> :: (Stream<Vect<R>> inputs,Vect<R> labels) |-> <>
-<Perceptron.test> :: (Stream<Vect<R>> inputs) |-> <>
+<Perceptron> |-> <Perceptron>   :: (<Z> DIM,<Z> epochs,<R> learning_rate)
+<Perceptron.forward> |-> <R>    :: (Vect<R> input)
+<Perceptron.backward> |-> <>    :: (<R> error,Vect<R> input)
+<Perceptron.learn> |-> <>       :: (Stream<Vect<R>> inputs,Vect<R> labels)
+<Perceptron.test> |-> <>        :: (Stream<Vect<R>> inputs)
 
 
 //-- CLASSES
@@ -95,8 +95,8 @@ perceptron_calc.learn(training_stream,supervizor_set)
 
 prog_ops.load_config("parameters")
 
-<Perceptron2> :: (<Z> DIM,<Z> epochs,<R> learning_rate) |-> <Perceptron2>
-<Perceptron2> :: (<Z> DIM,<Z> epochs,<R> learning_rate,Vect<R> use_weights) |-> <Perceptron2>
+<Perceptron2> |-> <Perceptron2>     :: (<Z> DIM,<Z> epochs,<R> learning_rate)
+<Perceptron2> |-> <Perceptron2>     :: (<Z> DIM,<Z> epochs,<R> learning_rate,Vect<R> use_weights)
 
 <Perceptron2> .extends <Perceptron> .mixin <Alpha,Beta,Zeta>
 //
@@ -104,7 +104,7 @@ prog_ops.load_config("parameters")
     super(DIM, epochs, learning_rate)
     ^!.Vect<R>      special_weights = prog_ops.config("weights")
 }
-.&&&
+.<polymorph>
 //
 (DIM, epochs, learning_rate, use_weights) {
     super(DIM, epochs, learning_rate)
@@ -116,20 +116,20 @@ prog_ops.load_config("parameters")
 
 
 
-let perceptron_recalc1 = .dram<Perceptron2>(DIM, epochs, learning_rate)
-let perceptron_recalc2 = .cache<Perceptron2>(DIM, epochs, learning_rate)
+let perceptron_recalc1 = .in .dram(<Perceptron2>)(DIM, epochs, learning_rate)
+let perceptron_recalc2 = .in .cache(<Perceptron2>)(DIM, epochs, learning_rate)
 
-let perceptron_recalc3 = .gpu_share<Perceptron2>(DIM, epochs, learning_rate)
+let perceptron_recalc3 = .in .gpu_share(<Perceptron2>)(DIM, epochs, learning_rate)
 
-let perceptron_recalc4 = .stack<Perceptron2>(DIM, epochs, learning_rate)
+let perceptron_recalc4 = .in .stack(<Perceptron2>)(DIM, epochs, learning_rate)
 
 Vect<R> weights = prog_ops.config("weights")
 
 SortedQueue<Perceptron2> my_container;
 
-let perceptron_recalc5 = .container(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights)
-let perceptron_recalc6 = .container.front(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights.copy())
-let perceptron_recalc7 = .container.back(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights.copy())
-let perceptron_recalc7 = .container.insert(my_container)<Perceptron2>(DIM, epochs, learning_rate, weights.copy())
+let perceptron_recalc5 = .in .{my_container}(<Perceptron2>)(DIM, epochs, learning_rate, weights)
+let perceptron_recalc6 = .in .{my_container}.front(<Perceptron2>)(DIM, epochs, learning_rate, weights.copy())
+let perceptron_recalc7 = .in .{my_container}.back(<Perceptron2>)(DIM, epochs, learning_rate, weights.copy())
+let perceptron_recalc7 = .in .{my_container}.insert(<Perceptron2>,compare)(DIM, epochs, learning_rate, weights.copy())
 
 */

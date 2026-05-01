@@ -12,21 +12,21 @@ const log = VFUNCS.log
 
 //-- FUNCTIONAL SUPPORT
 
-<cross_entropy> :: (Vect<R>,Vect<R>) |-> <R>
+<cross_entropy> |-> <R> :: (Vect<R>,Vect<R>)
 //
 func cross_entropy(o, y) {
     <R> c = (y .* log(o)) + ((1 - y) .* log(1 - o))
     :)-> -c
 }
 
-<sigmoid> :: (Vect<R>) |-> Vect<R>
+<sigmoid> |-> Vect<R> :: (Vect<R>)
 //
 func sigmoid(x) {
     Vect<R> nex = exp(-x)
     :)->  1 / (1 + nex)
 }
 
-<sigmoid_derivitive> :: (Vect<R>) |-> Vect<R>
+<sigmoid_derivitive> |-> Vect<R> :: (Vect<R>)
 //
 func sigmoid_derivitive(x) {
     Vect<R> nex = exp(-x)
@@ -34,7 +34,7 @@ func sigmoid_derivitive(x) {
     :)-> (nex / dom)
 }
 
-<softmax> :: (Vect<R>) |-> Vect<R>
+<softmax> |-> Vect<R> :: (Vect<R>)
 //
 func softmax(x) {
     Vect<R> exp_shifted = exp(x - MOPS.max(x))
@@ -42,7 +42,7 @@ func softmax(x) {
     :)->  exp_shifted / SUM
 }
 
-<softmax_derivative> :: (Vect<R>) |-> Vect<R>
+<softmax_derivative> |-> Vect<R> :: (Vect<R>)
 //
 func softmax_derivative(x) {
     Vect<R> exp_shifted = exp(x - MOPS.max(x))
@@ -53,7 +53,7 @@ func softmax_derivative(x) {
 
 //-- ALGORITHMIC
 
-<single_pass> :: (<Indexable>, Vect<R>, Vect<{Func(Vect<R>) |-> Vect<R>}>) |-> Vect<R>
+<single_pass> |-> Vect<R> :: (<Indexable>, Vect<R>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
 //
 func single_pass( Ws, input, op ) {
     Vect<R> out = input
@@ -68,7 +68,7 @@ func single_pass( Ws, input, op ) {
     :)-> out
 }
 
-<backward_pass> :: (<Indexable>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>}>) |-> <void>
+<backward_pass> |-> <void> :: (<Indexable>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
 //
 func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
     //
