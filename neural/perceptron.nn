@@ -114,8 +114,6 @@ prog_ops.load_config("parameters")
 }
 
 
-
-
 let perceptron_recalc1 = .in .dram(<Perceptron2>)(DIM, epochs, learning_rate)
 let perceptron_recalc2 = .in .cache(<Perceptron2>)(DIM, epochs, learning_rate)
 

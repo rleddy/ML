@@ -53,7 +53,7 @@ func softmax_derivative(x) {
 
 //-- ALGORITHMIC
 
-<single_pass> |-> Vect<R> :: (<Indexable>, Vect<R>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
+<single_pass> |-> Vect<R> :: ( <<Indexable> -> Matrix<R>(<Z>,<Z>)>, Vect<R>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
 //
 func single_pass( Ws, input, op ) {
     Vect<R> out = input
@@ -68,7 +68,7 @@ func single_pass( Ws, input, op ) {
     :)-> out
 }
 
-<backward_pass> |-> <void> :: (<Indexable>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
+<backward_pass> |-> <void> :: (<<Indexable> -> Matrix<R>(<Z>,<Z>)>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
 //
 func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
     //

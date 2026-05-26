@@ -1,0 +1,84 @@
+/*
+Solve: 
+        c .* x        c, x .el <R>^N
+Subject to: 
+        A .* x < b    x .el <R>^N .& b .el <R>^M
+        x >= 0.0
+*/
+
+
+
+
+const <R> epsilon = 1.0e-14
+
+<SimplexResult> .extends <Enums>{0} {
+    SOLVED,
+    UNBOUNDED,
+    UNFEASABLE
+}
+
+
+<simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R>(<Z>,<Z>) A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
+//
+func simplex_travel(A, columns, pivot_column,z_vars,slack_vars) {
+    <Vect<R>,<SimplexResult>> optimal = (UNFEASABLE,null,0)
+    .forever {
+        .if ( simplex_test(A, 0, columns, pivot_column) ) {
+            optimal = (A[.,0],SOLVED,A[0,0])
+            break
+        } .else {
+            <Z> pivot_index = pivot_search(A,pivot_column)
+            .if ( pivot_index == 0 ) {
+                optimal = (UNBOUNDED,null,0)
+                break
+            } .else {
+                pivot_exchange(A,pivot_column,pivot_index)
+                swap(z_vars[pivot_column-1],slack_vars[pivot_index-1])
+            }
+        }
+    }
+    :)-> optimal
+}
+
+
+<simplex_test> |-> <B> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+func simplex_test(A, row, columns, pivot_column) {
+    <B> passed = true
+    .if ( !(columns.empty()) ) {
+        <R> bmax = 0.0
+        <Z> k = columns.start() // iterator interal to vector 
+        pivot_column = k        // 
+        bmax = A[row,k]   // initial value
+        .while ( k = columns.next() ) { // update iterator with call to vector (but if k++ then compile this call)
+            let a_rk = A[row,k]         // possible update
+            (bmax, pivot_column) =  ((a_rk - bmax) > 0.0) ? (a_rk,k) : .no_change
+        }
+        passed = (bmax <= epsilon)
+    }
+    :)-> passed
+}
+
+
+<simplex_test> |-> <B> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+func simplex_fabs_test(A, row, columns, pivot_column) {
+    <B> passed = true
+    .if ( !(columns.empty()) ) {
+        <R> bmax = 0.0
+        <Z> k = columns.start()
+        pivot_column = k
+        bmax = A[row,k]   // initial value
+        .while ( k = columns.next() ) {
+            let a_rk = A[row,k]         // possible update
+            (bmax, pivot_column) =  (((fabs(a_rk) - fabs(bmax)) > 0.0) ? (a_rk,k) : .no_change
+        }
+        passed = (bmax <= epsilon)
+    }
+    :)-> passed
+}
+
+
+
+
+
+// pivot_search(A,pivot_column)
+// pivot_exchange(A,pivot_column,pivot_index)
