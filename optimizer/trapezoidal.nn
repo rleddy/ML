@@ -1,0 +1,26 @@
+
+
+<trapezoidal> |-> <R> :: (R<[,]> idomain,<Z> N,Func(<R>) |-> <R> F)
+//
+func trapezoidal(idomain,N,F) {
+    const <R> delta_x = idomain.steps(N)   // (ub - lb)/N
+    <R> sum = (1/2) * (f(idomain.lb) + f(idomain.ub));
+    //
+    .for up{delta_x} idomain {
+        sum += F(delta_x[+])
+    }
+    //
+    :)-> sum*delta_x
+}
+
+
+/**
+
+func f(x) {
+    :)-> x^2
+}
+
+trapezoidal([0,5.6],10000,f)
+
+
+*/

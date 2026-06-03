@@ -140,6 +140,7 @@ prog_ops.save_matrix_list(LM_tpz)
 
 /*
 
+
 R<[,]> r = [0.0,pi]
 //
 .for up{0.005} r {}
@@ -147,6 +148,7 @@ R<[,]> r = [0.0,pi]
 Z<[,)> i = [0,10)
 .for up{1} i {
 }
+
 // same as above
 .for up i {
 }
@@ -195,8 +197,8 @@ Z<[,)> k = [0,10)
         <R> jj = Math.exp(l)
         out_q << `Testing ${jj}`
         .'up_c'
-        .test {l} break :all:
-        .if (l >= k) break
+        .test {l} .break :all:
+        .if (l >= k) .break
         out_q << `Where l has been set to ${l}`
     }
     //

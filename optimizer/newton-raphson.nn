@@ -1,0 +1,28 @@
+
+
+
+
+const <R> epsilon = 1.0e-14
+
+
+// Find an x closes to the root. 
+<newton_raphson> |-> <R> :: (<R> x0,Func(<R>) |-> <R> f,Func(<R>) |-> <R> df,<R> tolerance,<Z> max_itr)
+//
+func newton_raphson(x0,f,df,tolerance,max_itr) {
+    <R> x = x0
+    const Z<[,)> i = [1,max_itr]
+    .for up i {
+        <R> fx = f(x)
+        <R> dfx = df(x)
+        .if ( .|dfx| < epsilon ) .break;        // divide by zero
+        <R> x_nxt = (x - fx/dfx)
+        .if ( .|x_nxt - x| < tolerance ) { 
+            :)-> x_nxt
+        } .else {
+            x = x_nxt
+        }
+    }
+    // did not work
+    :)-> inifnity
+}
+

@@ -1,0 +1,51 @@
+
+
+
+// In both methods, a form of list comprehension is being used. 
+// The list comprehension includes a regular block context loop, but the loop contains a .yield of a pair
+
+// one way of returns a vector of pairs 
+// The vector is explicity allocated in memory (not stack)
+// The vector reference is returned as .in .dram
+
+<euler_method> |-> Vect<<R,R>> .in .dram :: (R<[,]> time_lapse,<R> y0,<Z> N,Func(<R>,<R>) |-> <R> DF)
+//
+func euler_method(time_lapse,y0,N,DF) {
+    //
+    const <R> delta_t = time_lapse.steps(N)   // (ub - lb)/N
+    Vect<<R,R>> forward_diff = .in .dram(Vect<<R,R>>)(N)
+    //
+    <R> yi = y0
+    forward_diff = 
+            { (<R>,<R>) | 
+                .for up{delta_t} time_lapse {
+                    <R> t = time_lapse
+                    .yield (t,yi);
+                    yi = delta_t*DF(t,yi)
+                } 
+            }
+            //
+    :)-> forward_diff
+}
+
+
+// A pre allocated vector passed and returned by reference
+//
+<euler_method> |-> Vect<<R,R>>& :: (Vect<<R,R>> &diffy_pairs, R<[,]> time_lapse,<R> y0,<Z> N,Func(<R>,<R>) |-> <R> DF)
+//
+func euler_method_ref(diffy_pairs,time_lapse,y0,N,DF) {
+    //
+    const <R> delta_t = time_lapse.steps(N)   // (ub - lb)/N
+    //
+    <R> yi = y0
+    diffy_pairs = 
+            { (<R>,<R>) | 
+                .for up{delta_t} time_lapse {
+                    <R> t = time_lapse
+                    .yield (t,yi);
+                    yi = delta_t*DF(t,yi)
+                } 
+            }
+            //
+    :)-> diffy_pairs
+}

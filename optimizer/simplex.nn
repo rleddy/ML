@@ -21,7 +21,7 @@ const <R> epsilon = 1.0e-14
 <simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R>(<Z>,<Z>) A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
 //
 func simplex_travel(A, columns, pivot_column,z_vars,slack_vars) {
-    <Vect<R>,<SimplexResult>> optimal = (UNFEASABLE,null,0)
+    <<simplex_travel>|->> optimal = (UNFEASABLE,null,0)        // the type that this method returns 
     .forever {
         .if ( simplex_test(A, 0, columns, pivot_column) ) {
             optimal = (A[.,0],SOLVED,A[0,0])
@@ -51,7 +51,7 @@ func simplex_test(A, row, columns, pivot_column) {
         bmax = A[row,k]   // initial value
         .while ( k = columns.next() ) { // update iterator with call to vector (but if k++ then compile this call)
             let a_rk = A[row,k]         // possible update
-            (bmax, pivot_column) =  ((a_rk - bmax) > 0.0) ? (a_rk,k) : .no_change
+            (bmax, pivot_column) = ((a_rk - bmax) > 0.0) ? (a_rk,k) : .no_change
         }
         passed = (bmax <= epsilon)
     }
@@ -69,7 +69,7 @@ func simplex_fabs_test(A, row, columns, pivot_column) {
         bmax = A[row,k]   // initial value
         .while ( k = columns.next() ) {
             let a_rk = A[row,k]         // possible update
-            (bmax, pivot_column) =  (((fabs(a_rk) - fabs(bmax)) > 0.0) ? (a_rk,k) : .no_change
+            (bmax, pivot_column) = (((fabs(a_rk) - fabs(bmax)) > 0.0) ? (a_rk,k) : .no_change
         }
         passed = (bmax <= epsilon)
     }
