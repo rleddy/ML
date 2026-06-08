@@ -19,21 +19,24 @@ const <R> epsilon = 1.0e-14
 
 
 <simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R>(<Z>,<Z>) A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
+// The final phase of the simplex method
+// seeking to make the first column of the matrix 
+// the bearer of optimal variable values
 //
-func simplex_travel(A, columns, pivot_column,z_vars,slack_vars) {
+func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
     <<simplex_travel>|->> optimal = (UNFEASABLE,null,0)        // the type that this method returns 
     .forever {
-        .if ( simplex_test(A, 0, columns, pivot_column) ) {
+        .if ( (simplex_column_test(A, 0, columns, pivot_column)).<B> ) {  // one pairs,triples, ... .first synonum for [0] ... .<B> as the first bool
             optimal = (A[.,0],SOLVED,A[0,0])
             break
         } .else {
-            <Z> pivot_index = pivot_search(A,pivot_column)
-            .if ( pivot_index == 0 ) {
+            <Z> pivot_row = pivot_search(A,pivot_column)
+            .if ( pivot_row == 0 ) {
                 optimal = (UNBOUNDED,null,0)
                 break
             } .else {
-                pivot_exchange(A,pivot_column,pivot_index)
-                swap(z_vars[pivot_column-1],slack_vars[pivot_index-1])
+                pivot_exchange(A,pivot_row,pivot_column)
+                swap(z_vars[pivot_column-1],slack_vars[pivot_row-1])
             }
         }
     }
@@ -41,29 +44,31 @@ func simplex_travel(A, columns, pivot_column,z_vars,slack_vars) {
 }
 
 
-<simplex_test> |-> <B> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
-func simplex_test(A, row, columns, pivot_column) {
+<simplex_column_test> |-> <<B>,<R>> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+// seek a column that has the 
+func simplex_column_test(A, row, columns, pivot_column) {
     <B> passed = true
+    <R> bmax = 0.0
     .if ( !(columns.empty()) ) {
-        <R> bmax = 0.0
         <Z> k = columns.start() // iterator interal to vector 
         pivot_column = k        // 
         bmax = A[row,k]   // initial value
         .while ( k = columns.next() ) { // update iterator with call to vector (but if k++ then compile this call)
             let a_rk = A[row,k]         // possible update
-            (bmax, pivot_column) = ((a_rk - bmax) > 0.0) ? (a_rk,k) : .no_change
+            (bmax, pivot_column) = ((a_rk - bmax) > 0.0) ? (a_rk,k) : .no_change   // .no_change -- dont update vars 
         }
         passed = (bmax <= epsilon)
     }
-    :)-> passed
+    :)-> (passed,bmax)
 }
 
 
-<simplex_test> |-> <B> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
-func simplex_fabs_test(A, row, columns, pivot_column) {
+<simplex_column_fabs_test> |-> <<B>,<R>> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+//
+func simplex_column_fabs_test(A, row, columns, pivot_column) {
     <B> passed = true
+    <R> bmax = 0.0
     .if ( !(columns.empty()) ) {
-        <R> bmax = 0.0
         <Z> k = columns.start()
         pivot_column = k
         bmax = A[row,k]   // initial value
@@ -73,12 +78,301 @@ func simplex_fabs_test(A, row, columns, pivot_column) {
         }
         passed = (bmax <= epsilon)
     }
-    :)-> passed
+    :)-> (passed,bmax)
+}
+
+
+
+<pivot_search> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_column)
+//
+func pivot_search(A,pivot_column) {
+    <Z> row = 0
+    <Z> kp = pivot_column + 1
+    //
+    Z<[,]> i = [1,A.M]
+    .for up i ( .with <Z> j = i+1 )  {
+        .if ( A[j,kp] < -epsilon ) .break
+    }
+    //
+    .if ( i.beyond_last() ) {    // i > A.M
+        :)-> 0
+    } .else {
+        row = i + 1
+        //
+        <R> q1 = -A[row,1]/A[row,kp];
+        //
+        Z<[,]> i = [row,A.M]
+        .for up i ( .with <Z> l = i+1 )  {
+            .if ( A[j,kp] < -epsilon ) {
+                <R> q = -A[l,1]/A[l,kp];
+                (row,q1) = (q .< q1) ? (i+1,q) : .no_change
+                .<?.else .if ( q1 == q ) {
+                    Z<[,]> k = [1,A.N]
+                    <R> q0, qp
+                    .for up k ( .with <Z> k1 = k + 1 ) {
+                        qp = -A[row,k1]/A[row,kp];
+                        q0 = -A[l,k1]/A[l,kp];
+                        .if (q0 != qp) break;
+                    }
+                    .if (q0 < qp) row=(i+1);
+                }
+            }
+        }
+    }
+    //
+    :)-> row
+}
+
+
+
+<pivot_search_PY> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_column)
+
+func pivot_search_PY(A,pivot_column) {
+    <Z> row = 0
+    <Z> kp = pivot_column + 1
+    //
+    Z<[,]> i = [1,A.M]
+    //
+    <Z> i_hat = .first up i { <Z> | .with j = i+1; A[j,kp] < -epsilon }
+    //
+    .if ( i.beyond_last() ) {    // i > A.M
+        :)-> 0
+    } .else {
+        row = i_hat + 1
+        //
+        <R> q1 = -A[row,1]/A[row,kp];
+        //
+        Z<[,]> i = [row,A.M]
+        .update (row) .by
+        .looping up i ( .with <Z> l = i+1 )  {
+            .if ( A[j,kp] < -epsilon ) {
+                <R> q = -A[l,1]/A[l,kp];
+                (row,q1) = (q .< q1) ? (l,q) : .no_change
+                .<?.else .if ( q1 == q ) {
+                    Z<[,]> k = [1,A.N]
+                    <R,R> (q0, qp) = .first up k { <R,R> (q0,qp) | q0 != qp
+                                                    .with k1 = k+1
+                                                    .where {
+                                                        qp = -A[row,k1]/A[row,kp];
+                                                        q0 = -A[l,k1]/A[l,kp];
+                                                    }
+                                                }
+                    .if (q0 < qp) row=l;
+                }
+            }
+        }
+    }
+    //
+    :)-> row
+}
+
+
+
+<pivot_exchange> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_row,<Z> pivot_column)
+//
+func pivot_exchange(A,pivot_row,pivot_column) {
+    //
+    const <R> pivot = 1.0/A[pivot_row,pivot_column];   // assume offsets are figured
+    Z<[,]> i = [1,A.M]
+    Z<[,]> j = [1,A.N]
+    //
+    .for up i ( .skip pivot_row ) {        // pivot elimination  // reset assumed otherwise say so
+        let row_mult = (A[i,pivot_column] *= pivot);
+        .for up j ( .skip pivot_column ) {
+            A[i,j] -= A[pivot_row,j]*row_mult;
+        }
+    }
+    //
+    .for up j ( .skip pivot_column ) {
+        A[pivot_row,j] *= -pivot;
+    }
+    //
+    A[pivot_row,pivot_column] = pivot
 }
 
 
 
 
+<pivot_exchange> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_row,<Z> pivot_column)
+//
+func pivot_exchange_PY(A,pivot_row,pivot_column) {
+    //
+    const <R> pivot = 1.0/A[pivot_row,pivot_column];   // assume offsets are figured
+    Z<[,]> i = [1,A.M].skip(pivot_row)
+    Z<[,]> j = [1,A.N].skip(pivot_column)
+    //
+    A[i .up,pivot_column] *= pivot              // implicit in place map operation
+    A[i .up,j .up] -= A[pivot_row,j]*A[i,pivot_column];
+    //
+    A[pivot_row,j .up] *= -pivot;
+    //
+    A[pivot_row,pivot_column] = pivot
+}
 
-// pivot_search(A,pivot_column)
-// pivot_exchange(A,pivot_column,pivot_index)
+
+/*
+Z<[,)> i = [0,A.M)
+Z<[,)> j = [0,A.N)
+<R> alpha = random([0,1.0])
+j = random([3,(A.N-4)])
+A[i.up{2},j] = alpha    // even positions starting at zero
+//
+<R> beta = random([0,1.0])
+i = 1
+A[i.up{2},j] = beta  // odd positions
+
+// no skip required
+const <R> alpha = random([0,100]);   // assume offsets are figured
+const <Z> fixed_row = random([0,A.M]), fixed_column = random([0,A.N])
+//
+A[.,fixed_column] *= alpha              // implicit in place map operation
+A[.,.] -= A[pivot_row,.]*A[.,fixed_column];
+//
+A[fixed_row,.] *= -alpha;
+//
+A[fixed_row,fixed_column] = alpha
+*/
+
+
+// sequence[start:stop:step]
+/*
+my_list = [10, 20, 30, 40, 50]
+
+# Get the last 3 items
+print(my_list[-3:])    
+# Output: [30, 40, 50]
+
+# Exclude the last item
+print(my_list[:-1])    
+# Output: [10, 20, 30, 40]
+
+# Slice between negative indices
+print(my_list[-4:-1])  
+# Output: [20, 30, 40]
+
+
+
+// in place modification
+
+data = [1, 2, 3, 4, 5, 6, 7, 8]
+
+# Define a function you want to apply
+def square(x):
+    return x ** 2
+
+# Apply function to the slice (e.g., index 2 to 6)
+data[2:6] = map(square, data[2:6]) 
+# or use: data[2:6] = [square(x) for x in data[2:6]]
+
+print(data) 
+# Output: [1, 2, 9, 16, 25, 36, 7, 8]
+
+
+*/
+
+
+// criss cross
+/**
+import numpy as np
+
+def criss_cross(c, A, b):
+    """
+    Solves the Linear Programming problem using the Criss-Cross algorithm:
+    min c^T x
+    s.t. A x <= b
+         x >= 0
+    
+    Returns the optimal solution vector and optimal objective value.
+    """
+    m, n = A.shape
+    
+    # Construct the initial tableau
+    # Tableau layout:
+    # [ I   A   |  b ]
+    # [ 0  c^T  |  0 ]
+    I = np.eye(m)
+    tableau = np.hstack((I, A, b.reshape(-1, 1)))
+    cost_row = np.hstack((np.zeros(m), c, 0))
+    tableau = np.vstack((tableau, cost_row))
+    
+    num_vars = m + n
+    
+    while True:
+        # 1. Separate basic and non-basic partitions
+        # In simple tabular form, we scan the constraints (rows 0 to m) and the objective (row m+1)
+        # Primal variables are elements 0 to num_vars-1
+        x_vals = tableau[:-1, -1]
+        z_vals = tableau[-1, :-1]
+        
+        # Check termination: If all primal and dual variables >= 0
+        if np.all(x_vals >= 0) and np.all(z_vals >= 0):
+            break
+            
+        # 2. Select the index to pivot
+        # Find any negative primal variable
+        violating_primal = np.where(x_vals < 0)[0]
+        if len(violating_primal) > 0:
+            p = violating_primal[0] # Pivot row
+            
+            # Find a suitable entering variable (q) by scanning dual values
+            # (Criss-Cross rule: find negative element in the pivot row)
+            row_elements = tableau[p, :-1]
+            violating_dual = np.where((row_elements < 0))[0]
+            if len(violating_dual) == 0:
+                raise ValueError("Problem is unbounded or infeasible")
+            q = violating_dual[0] # Pivot column
+            
+        else:
+            # Find any negative dual/reduced-cost variable
+            violating_dual = np.where(z_vals < 0)[0]
+            if len(violating_dual) == 0:
+                break
+            q = violating_dual[0] # Pivot column
+            
+            # Find the row to leave
+            col_elements = tableau[:-1, q]
+            valid_rows = np.where(col_elements > 0)[0]
+            if len(valid_rows) == 0:
+                raise ValueError("Problem is unbounded or infeasible")
+            # Minimal ratio test
+            ratios = x_vals[valid_rows] / col_elements[valid_rows]
+            p = valid_rows[np.argmin(ratios)] # Pivot row
+            
+        # 3. Pivot Operation
+        pivot_val = tableau[p, q]
+        
+        # Normalize the pivot row
+        tableau[p, :] = tableau[p, :] / pivot_val
+        
+        # Eliminate the rest of the column
+        for r in range(tableau.shape[0]):
+            if r != p:
+                multiplier = tableau[r, q]
+                tableau[r, :] = tableau[r, :] - multiplier * tableau[p, :]
+
+    # Extract Results
+    optimal_x = np.zeros(num_vars)
+    for i in range(m):
+        # Identify basic variables in the columns
+        col = tableau[:-1, i]
+        if np.sum(col == 1) == 1 and np.sum(col == 0) == m - 1:
+            row_idx = np.where(col == 1)[0][0]
+            optimal_x[i] = tableau[row_idx, -1]
+            
+    optimal_value = tableau[-1, -1]
+    return optimal_x[:n], optimal_value
+
+# Example usage:
+# Minimize -x1 - 3x2
+# Subject to 
+# x1 + x2 <= 4
+# x1 + 2x2 <= 5
+c = np.array([-1.0, -3.0])
+A = np.array([[1.0, 1.0], [1.0, 2.0]])
+b = np.array([4.0, 5.0])
+
+x_opt, z_opt = criss_cross(c, A, b)
+print("Optimal x:", x_opt)
+print("Optimal Value:", z_opt)
+
+*/

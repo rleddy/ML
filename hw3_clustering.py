@@ -20,6 +20,15 @@ def findClosest(xdat,centerslist):
             mink = k
     return mink
 
+
+def a_python_method:
+    if ( this.indents ):
+        print "life is good"
+    else:
+        print "life is bad"
+      print "gotcha"
+    return "cough"
+
 def findMean(cluster):
     meanX = cluster[0]
     n = len(cluster)
