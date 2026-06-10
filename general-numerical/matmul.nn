@@ -1,0 +1,145 @@
+
+/*
+
+Generally, matrix multiplication will have an internal operation 
+which in the best case will be tied to specific hardware.
+
+This op will be designated A .* B, or inner product with rows and columns.
+Another op, element by element multiplication will be A * B, which is sometimes useful. (see backprop)
+
+Outer product is a numerical representation of a finite dimensional tensor product.
+
+C = A .(X) B  ... C will have dim A.M*B.M. A.N*B.N
+
+This will also default to an internal implementation... 
+This file provides examples for looping constructs specific to a computer language.
+
+*/
+
+
+<mat_mull> |-> Matrix<R> :: (Matrix<R> A,Matrix<R> B)
+
+func mat_mull(A,B) {
+    //
+    Z<[,)> i = [0,A.M)
+    Z<[,)> j = [0,min(A.N,B.M))
+    Z<[,)> k = [0,min(A.N,B.M))
+
+    let C = .in .dram(Matrix<R>)(A.M,B.M)
+    .for up i, up j {
+        C[i,j] = A[i,k .up] .* B[k .up,j]
+    }
+    //
+    :)-> C
+}
+
+
+func mat_mull(A,B) {
+    dim_check(A,B) ?{ :)-> .Fail } : .no_change
+    //
+    Z<[,)> i = [0,A.M)
+    Z<[,)> j = [0,min(A.N,B.M))
+    Z<[,)> k = [0,min(A.N,B.M))
+    //
+    let C = .in .dram(Matrix<R>)(A.M,B.M)
+    C[i .up,j .up] = A[i,k .up] .* B[k .up,j]
+    //
+    :)-> C
+}
+
+<mat_mull> |-> Matrix<R> :: (Matrix<R> A,Matrix<R> B,Matrix<R> C)
+
+func mat_mull(A,B,C) {
+    dim_check(A,B,C) ?{ :)-> .Fail } : .no_change
+    //
+    Z<[,)> i = [0,A.M)
+    Z<[,)> j = [0,min(A.N,B.M))
+    Z<[,)> k = [0,min(A.N,B.M))
+    //
+    C[i .up,j .up] = A[i,k .up] .* B[k .up,j]
+    //
+    :)-> C
+}
+
+
+
+<mat_outer> |-> Matrix<R> :: (Matrix<R> A,Matrix<R> B)
+
+/**
+A compiler should pick up the functional indecies of A and B
+and address the machine accordingly.
+The division results in the outter most loop (having more inertia than modulus.)
+The mod indecies each list a whole range that does not exhaust the range of C the associated C index.
+*/
+func mat_outer(A,B) {
+    let C = .in .dram(Matrix<R>)(A.M*B.M,A.N*B.N)
+    Z<[,)> i = [0,C.M)
+    Z<[,)> j = [0,C.N)
+    //
+    C[i.up,j.up] = A[(i % A.M),(j % A.N)] * B[(i/A.M),(j/A.N)]
+}
+
+/**
+Here the implementation is specific about the looping.
+i,j increment whenever k and l increment. But, i,j do not recycle.
+*/
+func mat_outer2(A,B) {
+    let C = .in .dram(Matrix<R>)(A.M*B.M,A.N*B.N)
+    Z<[,)> m = [0,B.M)
+    Z<[,)> n = [0,B.N)
+
+    Z<[,)> k = [0,A.M)
+    Z<[,)> l = [0,A.N)
+
+    Z<[,)> i = [0,C.M)
+    Z<[,)> j = [0,C.N)
+    //
+    .for up m, up n {
+        <R> b = B[m,n]
+        .for up k, up l {
+            C[i++,j++] = A[k,l] * b
+        }
+    }
+}
+
+
+
+
+
+/*
+Z<[,)> i = [0,A.M)
+<R> alpha = random([0,1.0])
+//
+<Z> j = random([3,(A.N-4)])
+A[i.up{2},j] = alpha    // even positions starting at zero
+//
+<R> beta = random([0,1.0])
+i = 1
+A[i.up{2},j] = beta  // odd positions
+
+// ----------------------------------------------
+
+Z<[,)> i = [0,A.M).evens()
+Z<[,)> ip1 = [0,A.N).odds()
+//
+<R> alpha = random([0,1.0])
+<Z> j = random([3,(A.N-4)])
+A[i.up,j] = alpha    // even positions starting at zero
+//
+<R> beta = random([0,1.0])
+A[ip1.up,j] = beta  // odd positions
+
+// ----------------------------------------------
+
+// no skip required
+const <R> alpha = random([0,100]);   // assume offsets are figured
+const <Z> fixed_row = random([0,A.M]), fixed_column = random([0,A.N])
+//
+A[.,fixed_column] *= alpha              // implicit in place map operation
+A[.,.] -= A[pivot_row,.]*A[.,fixed_column];
+//
+A[fixed_row,.] *= -alpha;
+//
+A[fixed_row,fixed_column] = alpha
+
+*/

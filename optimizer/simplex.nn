@@ -18,7 +18,7 @@ const <R> epsilon = 1.0e-14
 }
 
 
-<simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R>(<Z>,<Z>) A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
+<simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R> A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
 // The final phase of the simplex method
 // seeking to make the first column of the matrix 
 // the bearer of optimal variable values
@@ -44,7 +44,7 @@ func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
 }
 
 
-<simplex_column_test> |-> <<B>,<R>> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+<simplex_column_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
 // seek a column that has the 
 func simplex_column_test(A, row, columns, pivot_column) {
     <B> passed = true
@@ -63,7 +63,7 @@ func simplex_column_test(A, row, columns, pivot_column) {
 }
 
 
-<simplex_column_fabs_test> |-> <<B>,<R>> :: (Matrix<R>(<Z>,<Z>) A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+<simplex_column_fabs_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
 //
 func simplex_column_fabs_test(A, row, columns, pivot_column) {
     <B> passed = true
@@ -83,7 +83,7 @@ func simplex_column_fabs_test(A, row, columns, pivot_column) {
 
 
 
-<pivot_search> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_column)
+<pivot_search> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
 //
 func pivot_search(A,pivot_column) {
     <Z> row = 0
@@ -125,7 +125,7 @@ func pivot_search(A,pivot_column) {
 
 
 
-<pivot_search_PY> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_column)
+<pivot_search_PY> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
 
 func pivot_search_PY(A,pivot_column) {
     <Z> row = 0
@@ -168,7 +168,7 @@ func pivot_search_PY(A,pivot_column) {
 
 
 
-<pivot_exchange> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_row,<Z> pivot_column)
+<pivot_exchange> |-> <Z> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
 //
 func pivot_exchange(A,pivot_row,pivot_column) {
     //
@@ -193,7 +193,7 @@ func pivot_exchange(A,pivot_row,pivot_column) {
 
 
 
-<pivot_exchange> |-> <Z> :: (Matrix<R>(<Z>,<Z>) A,<Z> pivot_row,<Z> pivot_column)
+<pivot_exchange> |-> <Z> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
 //
 func pivot_exchange_PY(A,pivot_row,pivot_column) {
     //
@@ -210,16 +210,32 @@ func pivot_exchange_PY(A,pivot_row,pivot_column) {
 }
 
 
+
+
 /*
 Z<[,)> i = [0,A.M)
-Z<[,)> j = [0,A.N)
 <R> alpha = random([0,1.0])
-j = random([3,(A.N-4)])
+//
+<Z> j = random([3,(A.N-4)])
 A[i.up{2},j] = alpha    // even positions starting at zero
 //
 <R> beta = random([0,1.0])
 i = 1
 A[i.up{2},j] = beta  // odd positions
+
+// ----------------------------------------------
+
+Z<[,)> i = [0,A.M).evens()
+Z<[,)> ip1 = [0,A.N).odds()
+//
+<R> alpha = random([0,1.0])
+<Z> j = random([3,(A.N-4)])
+A[i.up,j] = alpha    // even positions starting at zero
+//
+<R> beta = random([0,1.0])
+A[ip1.up,j] = beta  // odd positions
+
+// ----------------------------------------------
 
 // no skip required
 const <R> alpha = random([0,100]);   // assume offsets are figured
@@ -231,6 +247,7 @@ A[.,.] -= A[pivot_row,.]*A[.,fixed_column];
 A[fixed_row,.] *= -alpha;
 //
 A[fixed_row,fixed_column] = alpha
+
 */
 
 
@@ -249,7 +266,6 @@ print(my_list[:-1])
 # Slice between negative indices
 print(my_list[-4:-1])  
 # Output: [20, 30, 40]
-
 
 
 // in place modification
