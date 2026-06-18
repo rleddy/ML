@@ -7,8 +7,6 @@ Subject to:
 */
 
 
-
-
 const <R> epsilon = 1.0e-14
 
 <SimplexResult> .extends <Enums>{0} {
@@ -27,7 +25,7 @@ func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
     <<simplex_travel>|->> optimal = (UNFEASABLE,null,0)        // the type that this method returns 
     .forever {
         .if ( (simplex_column_test(A, 0, columns, pivot_column)).<B> ) {  // one pairs,triples, ... .first synonum for [0] ... .<B> as the first bool
-            optimal = (A[.,0],SOLVED,A[0,0])
+            optimal = (A[..,0],SOLVED,A[0,0])
             break
         } .else {
             <Z> pivot_row = pivot_search(A,pivot_column)
@@ -126,7 +124,7 @@ func pivot_search(A,pivot_column) {
 
 
 <pivot_search_PY> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
-
+//
 func pivot_search_PY(A,pivot_column) {
     <Z> row = 0
     <Z> kp = pivot_column + 1
@@ -157,7 +155,7 @@ func pivot_search_PY(A,pivot_column) {
                                                         q0 = -A[l,k1]/A[l,kp];
                                                     }
                                                 }
-                    .if (q0 < qp) row=l;
+                    .if (q0 < qp) row = l;
                 }
             }
         }
@@ -168,7 +166,7 @@ func pivot_search_PY(A,pivot_column) {
 
 
 
-<pivot_exchange> |-> <Z> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
+<pivot_exchange> |-> <> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
 //
 func pivot_exchange(A,pivot_row,pivot_column) {
     //
@@ -193,7 +191,7 @@ func pivot_exchange(A,pivot_row,pivot_column) {
 
 
 
-<pivot_exchange> |-> <Z> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
+<pivot_exchange_PY> |-> <> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
 //
 func pivot_exchange_PY(A,pivot_row,pivot_column) {
     //
@@ -241,10 +239,10 @@ A[ip1.up,j] = beta  // odd positions
 const <R> alpha = random([0,100]);   // assume offsets are figured
 const <Z> fixed_row = random([0,A.M]), fixed_column = random([0,A.N])
 //
-A[.,fixed_column] *= alpha              // implicit in place map operation
-A[.,.] -= A[pivot_row,.]*A[.,fixed_column];
+A[..,fixed_column] *= alpha              // implicit in place map operation
+A[..,..] -= A[pivot_row,..]*A[..,fixed_column];
 //
-A[fixed_row,.] *= -alpha;
+A[fixed_row,..] *= -alpha;
 //
 A[fixed_row,fixed_column] = alpha
 
@@ -317,8 +315,8 @@ def criss_cross(c, A, b):
         # 1. Separate basic and non-basic partitions
         # In simple tabular form, we scan the constraints (rows 0 to m) and the objective (row m+1)
         # Primal variables are elements 0 to num_vars-1
-        x_vals = tableau[:-1, -1]
-        z_vals = tableau[-1, :-1]
+        x_vals = tableau[:-1, -1]   # column
+        z_vals = tableau[-1, :-1]   # row
         
         # Check termination: If all primal and dual variables >= 0
         if np.all(x_vals >= 0) and np.all(z_vals >= 0):

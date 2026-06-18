@@ -23,11 +23,10 @@ func mat_mull(A,B) {
     //
     Z<[,)> i = [0,A.M)
     Z<[,)> j = [0,min(A.N,B.M))
-    Z<[,)> k = [0,min(A.N,B.M))
 
     let C = .in .dram(Matrix<R>)(A.M,B.M)
     .for up i, up j {
-        C[i,j] = A[i,k .up] .* B[k .up,j]
+        C[i,j] = A[i,..] .* B[..,j]
     }
     //
     :)-> C
@@ -35,14 +34,13 @@ func mat_mull(A,B) {
 
 
 func mat_mull(A,B) {
-    dim_check(A,B) ?{ :)-> .Fail } : .no_change
-    //
+    dim_check(A,B) ? { :)-> .Fail } : .no_change
+    //k .up
     Z<[,)> i = [0,A.M)
     Z<[,)> j = [0,min(A.N,B.M))
-    Z<[,)> k = [0,min(A.N,B.M))
     //
     let C = .in .dram(Matrix<R>)(A.M,B.M)
-    C[i .up,j .up] = A[i,k .up] .* B[k .up,j]
+    C[i .up,j .up] = A[i,..] .* B[..,j]
     //
     :)-> C
 }
@@ -54,12 +52,12 @@ func mat_mull(A,B,C) {
     //
     Z<[,)> i = [0,A.M)
     Z<[,)> j = [0,min(A.N,B.M))
-    Z<[,)> k = [0,min(A.N,B.M))
     //
-    C[i .up,j .up] = A[i,k .up] .* B[k .up,j]
+    C[i .up,j .up] = A[i,..] .* B[..,j]
     //
     :)-> C
 }
+
 
 
 
