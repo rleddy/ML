@@ -136,7 +136,12 @@ func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
 
     Set<Z> zero_vars = {}
     Z<[,)> i = [0,aux_z.N)
-    Set<Z> objective_vars = .{ (<Z>) | .for up i { .if aux_z[i] === 0.0 .then i .else zero_vars += .{i} ) } }
+    Set<Z> objective_vars = .{ (<Z>) | .for up i { .if aux_z[i] === 0.0 .then { i } .else zero_vars += .{i} ) } }
+    Set<Z> artifical_variables = {}
+
+    Z<[,)> i = [neg_slack_count,(neg_slack_count + pos_slack_count))
+    Set<Z> pos_slack_rows = i.to_set()
+
     .forever {
         <Z> column = absmax(aux_z.|(objective_vars))
         <R> bmax = aux_z[column]
@@ -145,9 +150,37 @@ func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
             .if ( objective_const < -epsilon ) {
                 :)-> (.null,UNFEASABLE)
             } .else .if ( objective_const < epsilon ) {
-
+                .while ( !(artifical_variables.empty()) ) {
+                    <Z> row = artifical_variables.extract(1)
+                    <Z> column = absmax(A[row,..].|(objective_vars))
+                    <R> bmax = aux_z[column]
+                    .if ( bmax > epsilon ) {
+                        simplex_exchange(aux_z,A,row,column);
+                        // other conditions?
+                    }
+                }
+                .while ( !(pos_slack_rows.empty()) ) {
+                    <Z> row = artifical_variables.extract(1)
+                    A[row,..] *= -1
+                }
+                :)-> (A,FEASABLE)
             }
         }
+        //
+        <Z> row = pivot_search(A,column)
+        simplex_exchange(aux_z,A,row,column);
+        // 
+        // conditions 
+        .if ( row .el pos_slack_rows ) {
+            pos_slack_rows \= row
+            aux_z[column]++
+            A[..,column] *= -1
+        }
+        //
+        objective_vars \= column
+        objective_vars += { row }
+        zero_vars \= row
+        zero_vars += { column }
         //
     }
 }
