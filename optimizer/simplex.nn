@@ -12,8 +12,148 @@ const <R> epsilon = 1.0e-14
 <SimplexResult> .extends <Enums>{0} {
     SOLVED,
     UNBOUNDED,
-    UNFEASABLE
+    UNFEASABLE,
+    FEASABLE
 }
+
+<Ordering> .extends <Enums>{0} {
+    LEQ,
+    GEQ,
+    EQ
+}
+
+
+
+<Constraint> |-> <Constraint>   :: (Vect<R> coefs, <Ordering> ord, <R> bound)
+//
+//
+<Constraint> .extends <O> (coefs,ord,bound) {
+
+    .if ( bound < 0 ) {
+        bound = -bound
+        coefs <- -coefs      // break reference ... don't overwrite arguement, causes allocation
+        if ( ord != EQ ) {
+            ord = (ord == LEQ) ? GEQ : LEQ
+        }
+    }
+
+    // 
+    <R>.O constant      = bound
+    <Ordering>.O ord    = ord
+    Vect<R>.O coefs    = Vect<>.concat([bound],-coefs)
+
+    <Z> slack = 0
+    if ( ord != EQ ) {
+        slack = (ord == LEQ) ? -1 : 1
+    }
+
+} .methods {
+//
+}
+
+
+
+<Objective> |-> <Objective>   :: (Vect<R> coefs)
+//
+<Objective> .extends <Constraint> (coefs) {
+    super(coefs, EQ, 0.0)
+} .methods {
+//
+}
+
+
+<simplex_build> |-> <Matrix<R>,<SimplexResult>> :: (<Objective> objective, List<Contraint> contraints)
+//
+//
+func simplex_build(objective,contraints) {
+
+    <Z> neg_slack_count = 0
+    <Z> pos_slack_count = 0
+    <Z> no_slack_count = 0
+    .for each ( contraints c ) {
+        .if ( c.slack != 0 ) {
+            .if ( c.slack < 0 ) {
+                neg_slack++
+            } .else {
+                pos_slack++
+            }
+        } .else no_slack_count++
+    }
+
+    // Matrix<>.set_alloc_context(a_context)
+    
+    // if this is allocation to cells, then the book keepers will be eliminated on return, leaving book keeping up to A
+    // if this is in RAM, then these will be deleted after A is constructed
+    // initially zero rows are created, they are all added in the next loop
+    Matrix<R> c_leqs = .in .ephemeral Matrix<R>.make(0,objective.coefs.N + (neg_slack_count + pos_slack_count))
+    Matrix<R> c_geqs = .in .ephemeral Matrix<R>.make(0,objective.coefs.N + (neg_slack_count + pos_slack_count))
+    Matrix<R> c_eqs  = .in .ephemeral Matrix<R>.make(0,objecc_leqstive.coefs.N + (neg_slack_count + pos_slack_count))
+    //
+    <Z> N = contraints.coefs.N
+    <Z> slack_offset = 1
+    .for each ( contraints c ) {
+        .if ( c.slack < 0 ) {
+            c_leqs.add_row(c.coefs)
+            c_leqs[.last,N+slack_offset] = c.slack
+            slack_offset++
+        } .else .if ( c.slack > 0 ) {
+            c_geqs.add_row(c.coefs)
+            c_geqs[.last,N+slack_offset] = c.slack
+            slack_offset++
+        } .else {
+            c_eqs.add_row(c.coefs)
+        }
+    }
+
+    
+    Matrix<R> A = Matrix<R>.stack(c_leqs,c_geqs,c_eqs)
+
+    .if ( c_geqs.M > 0 || c_eqs.M > 0 ) {
+        Matrix<R> A_hat = .in .ephemeral Matrix<R>.stack(A,objective)
+        <SimplexResult> state;
+        (A_hat,state) = simplex_phase_1(A_hat,neg_slack_count,pos_slack_count,no_slack_count)
+        .if ( state !== FEASABLE ) {
+            .delete A
+            :)-> (.null,state)
+        }
+        A = A_hat
+    }
+
+    :)-> (A,FEASABLE)
+}
+
+
+<simplex_phase_1> |-> <Matrix<R>,<SimplexResult>> :: (Matrix<R> A,<Z> neg_slack_count,<Z> pos_slack_count,<Z> no_slack_count )
+//
+func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
+    <Z> i = [0,A.M)
+    const <Z> const_col = 0
+    Vect<R> aux_z = .in ephemeral Vect<R>(N)
+    .for up i {
+        aux_z += A[i,..]
+    }
+    aux_z = -aux_z
+
+    Set<Z> zero_vars = {}
+    Z<[,)> i = [0,aux_z.N)
+    Set<Z> objective_vars = .{ (<Z>) | .for up i { .if aux_z[i] === 0.0 .then i .else zero_vars += .{i} ) } }
+    .forever {
+        <Z> column = absmax(aux_z.|(objective_vars))
+        <R> bmax = aux_z[column]
+        .if ( bmax < epsilon ) {
+            let objective_const = aux_z[const_col]
+            .if ( objective_const < -epsilon ) {
+                :)-> (.null,UNFEASABLE)
+            } .else .if ( objective_const < epsilon ) {
+
+            }
+        }
+        //
+    }
+}
+
+
+
 
 
 <simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R> A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
