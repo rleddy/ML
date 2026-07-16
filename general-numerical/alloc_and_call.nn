@@ -40,3 +40,41 @@ let perceptron_recalc7 = .in .{my_container}.insert(<Perceptron2>,compare)(DIM, 
 
 */
 
+
+/*
+Z<[,)> i = [0,A.M)
+<R> alpha = random([0,1.0])
+//
+<Z> j = random([3,(A.N-4)])
+A[i.up{2},j] = alpha    // even positions starting at zero
+//
+<R> beta = random([0,1.0])
+i = 1
+A[i.up{2},j] = beta  // odd positions
+
+// ----------------------------------------------
+
+Z<[,)> i = [0,A.M).evens()
+Z<[,)> ip1 = [0,A.N).odds()
+//
+<R> alpha = random([0,1.0])
+<Z> j = random([3,(A.N-4)])
+A[i.up,j] = alpha    // even positions starting at zero
+//
+<R> beta = random([0,1.0])
+A[ip1.up,j] = beta  // odd positions
+
+// ----------------------------------------------
+
+// no skip required
+const <R> alpha = random([0,100]);   // assume offsets are figured
+const <Z> fixed_row = random([0,A.M]), fixed_column = random([0,A.N])
+//
+A[..,fixed_column] *= alpha              // implicit in place map operation
+A[..,..] -= A[pivot_row,..]*A[..,fixed_column];
+//
+A[fixed_row,..] *= -alpha;
+//
+A[fixed_row,fixed_column] = alpha
+
+*/

@@ -13,6 +13,7 @@ const <R> epsilon = 1.0e-14
     SOLVED,
     UNBOUNDED,
     UNFEASABLE,
+    DEGENERATE,
     FEASABLE
 }
 
@@ -31,19 +32,19 @@ const <R> epsilon = 1.0e-14
     //
     .if ( bound < 0 ) {
         bound = -bound
-        coefs <- -coefs      // break reference ... don't overwrite arguement, causes allocation
+        coefs <- -coefs      // break reference ... don't overwrite argument, causes allocation
         if ( ord != EQ ) {
             ord = (ord == LEQ) ? GEQ : LEQ
         }
     }
     // 
-    <R>.O           constant    = bound
-    <Ordering>.O    ord         = ord
-    Vect<R>.O       coefs       = Vect<>.concat([bound],-coefs)
+    <O.R>           constant    = bound
+    <O.Ordering>    ord         = ord
+    O.Vect<R>       coefs       = Vect<>.concat([bound],-coefs)
     //
-    <Z> slack = 0
+    <O.Z> slack = 0
     if ( ord != EQ ) {
-        slack = (ord == LEQ) ? -1 : 1
+        O.slack = (ord == LEQ) ? -1 : 1
     }
     //
 } .methods {
@@ -72,9 +73,9 @@ func simplex_build(objective,contraints) {
     .for each ( contraints c ) {
         .if ( c.slack != 0 ) {
             .if ( c.slack < 0 ) {
-                neg_slack++
+                neg_slack_count++
             } .else {
-                pos_slack++
+                pos_slack_count++
             }
         } .else no_slack_count++
     }
@@ -91,20 +92,15 @@ func simplex_build(objective,contraints) {
     <Z> N = contraints.coefs.N
     <Z> slack_offset = 1
     .for each ( contraints c ) {
-        .if ( c.slack < 0 ) {
-            c_leqs.add_row(c.coefs)
-            c_leqs[.last,N+slack_offset] = c.slack
-            slack_offset++
-        } .else .if ( c.slack > 0 ) {
-            c_geqs.add_row(c.coefs)
-            c_geqs[.last,N+slack_offset] = c.slack
-            slack_offset++
+        .if ( c.slack == 0 ) {
+            c_eqs.add_row(c.coefs)      // equalities will be assigned artificial variables
         } .else {
-            c_eqs.add_row(c.coefs)
+            c_leqs.add_row(c.coefs)
+            c_leqs[.last,N+slack_offset] = c.slack  // slack column of the objective
+            slack_offset++
         }
     }
 
-    
     Matrix<R> A = Matrix<R>.vstack(c_leqs,c_geqs,c_eqs)
 
     .if ( c_geqs.M > 0 || c_eqs.M > 0 ) {
@@ -113,7 +109,7 @@ func simplex_build(objective,contraints) {
         (A_hat,state) = simplex_phase_1(A_hat,neg_slack_count,pos_slack_count,no_slack_count)
         .if ( state !== FEASABLE ) {
             .delete A
-            :)-> (.null,state)
+            -(-> (.null,state)
         }
         A = A_hat
     }
@@ -127,44 +123,46 @@ func simplex_build(objective,contraints) {
 func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
     <Z> i = [0,A.M)
     const <Z> const_col = 0
-    Vect<R> aux_z = .in ephemeral Vect<R>(N)
+    Vect<R> aux_z = .in ephemeral Vect<R>(A.N)
     .for up i {
         aux_z += A[i,..]
     }
-    aux_z = -aux_z
+    aux_z = -aux_z   // negate artificial auxiliary
 
-    Set<Z> zero_vars = {}
     Z<[,)> i = [0,aux_z.N)
-    Set<Z> objective_vars = .{ (<Z>) | .for up i { .if aux_z[i] === 0.0 .then { i } .else zero_vars += .{i} ) } }
-    Set<Z> artifical_variables = {}
+    Set<Var<Z>> zero_vars = {}
+    Set<Var<Z>> objective_vars = .{ (Var<Z>) | .for up i { .if aux_z[i] != 0.0 .then { (Var<Z>).make(i,i) } .else { zero_vars += .{ (Var<Z>).make(i,i) }; .noop } } }
+    Z<[,)> no_slack_offset = [0,(neg_slack_count + pos_slack_count))
+    Set<Z> artifical_variables = .{ (Var<Z>) | .for up no_slack_offset { no_slack_offset } }
 
     Z<[,)> i = [neg_slack_count,(neg_slack_count + pos_slack_count))
     Set<Z> pos_slack_rows = i.to_set()
 
     .forever {
-        <<Z>,<R>> (column,bmax) = (argmax,absmax)(aux_z.|(objective_vars))
+        <Var<Z>,R> (column,bmax) = (argmax,max)(aux_z.|(objective_vars))
         .if ( bmax < epsilon ) {
             <R> objective_const = aux_z[const_col]
-            .if ( objective_const < -epsilon ) {
-                :)-> (.null,UNFEASABLE)
-            } .else .if ( objective_const < epsilon ) {
+            .if ( objective_const < -epsilon ) { // too big in the wrong directions
+                -(-> (.null,UNFEASABLE)
+            } .else .if ( objective_const < epsilon ) {  // very close to zero
                 .while ( !(artifical_variables.empty()) ) {
-                    <Z> row = artifical_variables.extract(1)
-                    <<Z>,<R>> (column,bmax) = (argmax,absmax)(A[row,..].|(objective_vars))
+                    <Z> row = artifical_variables.extract(1)        // extract ... pull out and remove
+                    <Var<Z>,R> (column,bmax) = (argmax,absmax)(A[row,..].|(objective_vars))
                     .if ( bmax > epsilon ) {
                         simplex_exchange(aux_z,A,row,column);
                         // other conditions?
                     }
                 }
                 .while ( !(pos_slack_rows.empty()) ) {
-                    <Z> row = artifical_variables.extract(1)
+                    <Z> row = pos_slack_rows.extract(1)             // extract ... pull out and remove
                     A[row,..] *= -1
                 }
                 :)-> (A,FEASABLE)
             }
+            <Var<Z>,R> (row,bmax) = (argmax,calc_min(*,*))((A[..,const_col],A[..,column])
         }
         //
-        <Z> row = pivot_search(A,column)
+        <Z> row = pivot_row_search(A,column)
         simplex_exchange(aux_z,A,row,column);
         // 
         // conditions 
@@ -175,11 +173,48 @@ func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
         }
         //
         objective_vars \= column
-        objective_vars += { row }
+        objective_vars += .{ row }
         zero_vars \= row
-        zero_vars += { column }
+        zero_vars += .{ column }
         //
     }
+}
+
+
+<calc_min> |-> <<SimplexResult>,<R>,<Z>> :: (Vect<R> column,Vect<R> consts)
+
+func calc_max(column,consts) {
+    <Z> N = consts.N
+    Z<[,)> i = [0,N)
+    <Z> smallest_count = 0
+    <Z> neg_col_count = 0
+    <Z> min_i = 0
+    <R> min_value = infinity
+    .for up i {
+        <R> coef = column[i]
+        .if ( coef < 0.0 ) { neg_col_count++; .continue }
+        <R> cv = consts[i]
+        <R> ratio = calc_min_op(cv,coef)
+        .if ( ratio < epsilon ) {
+            smallest_count++
+        }
+        if ( ratio < min_value ) {
+            min_value = ratio
+            min_i = i
+        }
+    }
+
+    <SimplexResult> state = FEASABLE
+    .if (  smallest_count > 1 ) state = DEGENERATE
+    .else if ( neg_col_count == N ) state = UNBOUNDED
+
+    :)-> (state,min_value,min_i)
+}
+
+
+
+func calc_min_op(const_value,row_coeff) {
+    :)-> ( row_coeff < epsilon ) ? 0.0 : const_value/row_coeff
 }
 
 
@@ -198,7 +233,7 @@ func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
             optimal = (A[..,0],SOLVED,A[0,0])
             break
         } .else {
-            <Z> pivot_row = pivot_search(A,pivot_column)
+            <Z> pivot_row = pivot_row_search(A,pivot_column)
             .if ( pivot_row == 0 ) {
                 optimal = (UNBOUNDED,null,0)
                 break
@@ -214,7 +249,7 @@ func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
 
 <simplex_column_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
 // seek a column that has the 
-func simplex_column_test(A, row, columns, pivot_column) {
+func simplex_column_test(A, row, columns, &pivot_column) {
     <B> passed = true
     <R> bmax = 0.0
     .if ( !(columns.empty()) ) {
@@ -251,9 +286,9 @@ func simplex_column_fabs_test(A, row, columns, pivot_column) {
 
 
 
-<pivot_search> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
+<pivot_row_search> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
 //
-func pivot_search(A,pivot_column) {
+func pivot_row_search(A,pivot_column) {
     <Z> row = 0
     <Z> kp = pivot_column + 1
     //
@@ -293,9 +328,9 @@ func pivot_search(A,pivot_column) {
 
 
 
-<pivot_search_PY> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
+<pivot_row_search_PY> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
 //
-func pivot_search_PY(A,pivot_column) {
+func pivot_row_search_PY(A,pivot_column) {
     <Z> row = 0
     <Z> kp = pivot_column + 1
     //
@@ -380,43 +415,6 @@ func pivot_exchange_PY(A,pivot_row,pivot_column) {
 
 
 
-/*
-Z<[,)> i = [0,A.M)
-<R> alpha = random([0,1.0])
-//
-<Z> j = random([3,(A.N-4)])
-A[i.up{2},j] = alpha    // even positions starting at zero
-//
-<R> beta = random([0,1.0])
-i = 1
-A[i.up{2},j] = beta  // odd positions
-
-// ----------------------------------------------
-
-Z<[,)> i = [0,A.M).evens()
-Z<[,)> ip1 = [0,A.N).odds()
-//
-<R> alpha = random([0,1.0])
-<Z> j = random([3,(A.N-4)])
-A[i.up,j] = alpha    // even positions starting at zero
-//
-<R> beta = random([0,1.0])
-A[ip1.up,j] = beta  // odd positions
-
-// ----------------------------------------------
-
-// no skip required
-const <R> alpha = random([0,100]);   // assume offsets are figured
-const <Z> fixed_row = random([0,A.M]), fixed_column = random([0,A.N])
-//
-A[..,fixed_column] *= alpha              // implicit in place map operation
-A[..,..] -= A[pivot_row,..]*A[..,fixed_column];
-//
-A[fixed_row,..] *= -alpha;
-//
-A[fixed_row,fixed_column] = alpha
-
-*/
 
 
 // sequence[start:stop:step]
