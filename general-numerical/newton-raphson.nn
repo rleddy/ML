@@ -6,9 +6,9 @@ const <R> epsilon = 1.0e-14
 
 
 // Find an x closes to the root. 
-<newton_raphson> |-> <R> :: (<R> x0,Func(<R>) |-> <R> f,Func(<R>) |-> <R> df,<R> tolerance,<Z> max_itr)
+<newton_raphson> |-> <R> :: (<R> x0,fun(<R>) |-> <R> f,fun(<R>) |-> <R> df,<R> tolerance,<Z> max_itr)
 //
-func newton_raphson(x0,f,df,tolerance,max_itr) {
+fun newton_raphson(x0,f,df,tolerance,max_itr) {
     <R> x = x0
     const Z<[,)> i = [1,max_itr]
     .for up i {

@@ -14,21 +14,21 @@ const log = VFUNCS.log
 
 <cross_entropy> |-> <R> :: (Vect<R>,Vect<R>)
 //
-func cross_entropy(o, y) {
+fun cross_entropy(o, y) {
     <R> c = (y .* log(o)) + ((1 - y) .* log(1 - o))
     :)-> -c
 }
 
 <sigmoid> |-> Vect<R> :: (Vect<R>)
 //
-func sigmoid(x) {
+fun sigmoid(x) {
     Vect<R> nex = exp(-x)
     :)->  1 / (1 + nex)
 }
 
 <sigmoid_derivitive> |-> Vect<R> :: (Vect<R>)
 //
-func sigmoid_derivitive(x) {
+fun sigmoid_derivitive(x) {
     Vect<R> nex = exp(-x)
     Vect<R> dom = nex*(nex + 2) + 1
     :)-> (nex / dom)
@@ -36,7 +36,7 @@ func sigmoid_derivitive(x) {
 
 <softmax> |-> Vect<R> :: (Vect<R>)
 //
-func softmax(x) {
+fun softmax(x) {
     Vect<R> exp_shifted = exp(x - MOPS.max(x))
     <R> SUM = .Sigma(exp_shifted)
     :)->  exp_shifted / SUM
@@ -44,7 +44,7 @@ func softmax(x) {
 
 <softmax_derivative> |-> Vect<R> :: (Vect<R>)
 //
-func softmax_derivative(x) {
+fun softmax_derivative(x) {
     Vect<R> exp_shifted = exp(x - MOPS.max(x))
     <R> SUM = .Sigma(exp_shifted)
     Vect<R> ratio = (exp_shifted / SUM) // divide vector by scalar
@@ -53,9 +53,9 @@ func softmax_derivative(x) {
 
 //-- ALGORITHMIC
 
-<single_pass> |-> Vect<R> :: ( <<Indexable> -> Matrix<R>(<Z>,<Z>)>, Vect<R>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
+<single_pass> |-> Vect<R> :: ( <<Indexable> -> Matrix<R>(<Z>,<Z>)>, Vect<R>, Vect<{fun(Vect<R>) |-> Vect<R>}>)
 //
-func single_pass( Ws, input, op ) {
+fun single_pass( Ws, input, op ) {
     Vect<R> out = input
     g_layers[0].evals = input
     .for up ( Ws W .ith <Z> l ) {   // for layer
@@ -68,9 +68,9 @@ func single_pass( Ws, input, op ) {
     :)-> out
 }
 
-<backward_pass> |-> <void> :: (<<Indexable> -> Matrix<R>(<Z>,<Z>)>, Vect<R>, Vect<R>, <Z>, Vect<{Func(Vect<R>) |-> Vect<R>}>)
+<backward_pass> |-> <void> :: (<<Indexable> -> Matrix<R>(<Z>,<Z>)>, Vect<R>, Vect<R>, <Z>, Vect<{fun(Vect<R>) |-> Vect<R>}>)
 //
-func backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
+fun backward_pass( Ws, y_difference, y_train, n_layers, derivitive_op) {
     //
     <Z> l = (n_layers - 1)
     g_layers[l].diff = y_difference

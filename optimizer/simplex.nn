@@ -38,8 +38,8 @@ const <R> epsilon = 1.0e-14
         }
     }
     // 
-    <O.R>           constant    = bound
-    <O.Ordering>    ord         = ord
+    O.<R>           constant    = bound
+    O.<Ordering>    ord         = ord
     O.Vect<R>       coefs       = Vect<>.concat([bound],-coefs)
     //
     <O.Z> slack = 0
@@ -65,7 +65,7 @@ const <R> epsilon = 1.0e-14
 <simplex_build> |-> <Matrix<R>,<SimplexResult>> :: (<Objective> objective, List<Contraint> contraints)
 //
 //
-func simplex_build(objective,contraints) {
+fun simplex_build(objective,contraints) {
 
     <Z> neg_slack_count = 0
     <Z> pos_slack_count = 0
@@ -120,7 +120,7 @@ func simplex_build(objective,contraints) {
 
 <simplex_phase_1> |-> <Matrix<R>,<SimplexResult>> :: (Matrix<R> A,<Z> neg_slack_count,<Z> pos_slack_count,<Z> no_slack_count )
 //
-func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
+fun simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
     <Z> i = [0,A.M)
     const <Z> const_col = 0
     Vect<R> aux_z = .in ephemeral Vect<R>(A.N)
@@ -159,7 +159,7 @@ func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
                 }
                 :)-> (A,FEASABLE)
             }
-            <Var<Z>,R> (row,bmax) = (argmax,calc_min(*,*))((A[..,const_col],A[..,column])
+            <Var<Z>,<SimplexResult>,R> (row,state,bmax) = (argmax,calc_min(*,*))((A[..,const_col],A[..,column])
         }
         //
         <Z> row = pivot_row_search(A,column)
@@ -183,7 +183,7 @@ func simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
 
 <calc_min> |-> <<SimplexResult>,<R>,<Z>> :: (Vect<R> column,Vect<R> consts)
 
-func calc_max(column,consts) {
+fun calc_min(column,consts) {
     <Z> N = consts.N
     Z<[,)> i = [0,N)
     <Z> smallest_count = 0
@@ -213,7 +213,7 @@ func calc_max(column,consts) {
 
 
 
-func calc_min_op(const_value,row_coeff) {
+fun calc_min_op(const_value,row_coeff) {
     :)-> ( row_coeff < epsilon ) ? 0.0 : const_value/row_coeff
 }
 
@@ -226,7 +226,7 @@ func calc_min_op(const_value,row_coeff) {
 // seeking to make the first column of the matrix 
 // the bearer of optimal variable values
 //
-func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
+fun simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
     <<simplex_travel>|->> optimal = (UNFEASABLE,null,0)        // the type that this method returns 
     .forever {
         .if ( (simplex_column_test(A, 0, columns, pivot_column)).<B> ) {  // one pairs,triples, ... .first synonum for [0] ... .<B> as the first bool
@@ -249,7 +249,7 @@ func simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
 
 <simplex_column_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
 // seek a column that has the 
-func simplex_column_test(A, row, columns, &pivot_column) {
+fun simplex_column_test(A, row, columns, &pivot_column) {
     <B> passed = true
     <R> bmax = 0.0
     .if ( !(columns.empty()) ) {
@@ -268,7 +268,7 @@ func simplex_column_test(A, row, columns, &pivot_column) {
 
 <simplex_column_fabs_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
 //
-func simplex_column_fabs_test(A, row, columns, pivot_column) {
+fun simplex_column_fabs_test(A, row, columns, pivot_column) {
     <B> passed = true
     <R> bmax = 0.0
     .if ( !(columns.empty()) ) {
@@ -288,7 +288,7 @@ func simplex_column_fabs_test(A, row, columns, pivot_column) {
 
 <pivot_row_search> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
 //
-func pivot_row_search(A,pivot_column) {
+fun pivot_row_search(A,pivot_column) {
     <Z> row = 0
     <Z> kp = pivot_column + 1
     //
@@ -330,7 +330,7 @@ func pivot_row_search(A,pivot_column) {
 
 <pivot_row_search_PY> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
 //
-func pivot_row_search_PY(A,pivot_column) {
+fun pivot_row_search_PY(A,pivot_column) {
     <Z> row = 0
     <Z> kp = pivot_column + 1
     //
@@ -373,7 +373,7 @@ func pivot_row_search_PY(A,pivot_column) {
 
 <pivot_exchange> |-> <> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
 //
-func pivot_exchange(A,pivot_row,pivot_column) {
+fun pivot_exchange(A,pivot_row,pivot_column) {
     //
     const <R> pivot = 1.0/A[pivot_row,pivot_column];   // assume offsets are figured
     Z<[,]> i = [1,A.M]
@@ -398,7 +398,7 @@ func pivot_exchange(A,pivot_row,pivot_column) {
 
 <pivot_exchange_PY> |-> <> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
 //
-func pivot_exchange_PY(A,pivot_row,pivot_column) {
+fun pivot_exchange_PY(A,pivot_row,pivot_column) {
     //
     const <R> pivot = 1.0/A[pivot_row,pivot_column];   // assume offsets are figured
     Z<[,]> i = [1,A.M].skip(pivot_row)

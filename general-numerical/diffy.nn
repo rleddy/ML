@@ -8,9 +8,9 @@
 // The vector is explicity allocated in memory (not stack)
 // The vector reference is returned as .in .dram
 
-<euler_method> |-> Vect<<R,R>> .in .dram :: (R<[,]> time_lapse,<R> y0,<Z> N,Func(<R>,<R>) |-> <R> DF)
+<euler_method> |-> Vect<<R,R>> .in .dram :: (R<[,]> time_lapse,<R> y0,<Z> N,Fun(<R>,<R>) |-> <R> DF)
 //
-func euler_method(time_lapse,y0,N,DF) {
+fun euler_method(time_lapse,y0,N,DF) {
     //
     const <R> delta_t = time_lapse.steps(N)   // (ub - lb)/N
     Vect<<R,R>> forward_diff = .in .dram(Vect<<R,R>>)(N)
@@ -31,9 +31,9 @@ func euler_method(time_lapse,y0,N,DF) {
 
 // A pre allocated vector passed and returned by reference
 //
-<euler_method> |-> Vect<<R,R>>& :: (Vect<<R,R>> &diffy_pairs, R<[,]> time_lapse,<R> y0,<Z> N,Func(<R>,<R>) |-> <R> DF)
+<euler_method> |-> Vect<<R,R>>& :: (Vect<<R,R>> &diffy_pairs, R<[,]> time_lapse,<R> y0,<Z> N,Fun(<R>,<R>) |-> <R> DF)
 //
-func euler_method_ref(diffy_pairs,time_lapse,y0,N,DF) {
+fun euler_method_ref(diffy_pairs,time_lapse,y0,N,DF) {
     //
     const <R> delta_t = time_lapse.steps(N)   // (ub - lb)/N
     //

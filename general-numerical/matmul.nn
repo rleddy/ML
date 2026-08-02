@@ -19,7 +19,7 @@ This file provides examples for looping constructs specific to a computer langua
 
 <mat_mull> |-> Matrix<R> :: (Matrix<R> A,Matrix<R> B)
 
-func mat_mull(A,B) {
+fun mat_mull(A,B) {
     //
     Z<[,)> i = [0,A.M)
     Z<[,)> j = [0,min(A.N,B.M))
@@ -33,7 +33,7 @@ func mat_mull(A,B) {
 }
 
 
-func mat_mull(A,B) {
+fun mat_mull(A,B) {
     dim_check(A,B) ? { :)-> .Fail } : .no_change
     //k .up
     Z<[,)> i = [0,A.M)
@@ -47,7 +47,7 @@ func mat_mull(A,B) {
 
 <mat_mull> |-> Matrix<R> :: (Matrix<R> A,Matrix<R> B,Matrix<R> C)
 
-func mat_mull(A,B,C) {
+fun mat_mull(A,B,C) {
     dim_check(A,B,C) ?{ :)-> .Fail } : .no_change
     //
     Z<[,)> i = [0,A.M)
@@ -69,7 +69,7 @@ and address the machine accordingly.
 The division results in the outter most loop (having more inertia than modulus.)
 The mod indecies each list a whole range that does not exhaust the range of C the associated C index.
 */
-func mat_outer(A,B) {
+fun mat_outer(A,B) {
     let C = .in .dram(Matrix<R>)(A.M*B.M,A.N*B.N)
     Z<[,)> i = [0,C.M)
     Z<[,)> j = [0,C.N)
@@ -81,7 +81,7 @@ func mat_outer(A,B) {
 Here the implementation is specific about the looping.
 i,j increment whenever k and l increment. But, i,j do not recycle.
 */
-func mat_outer2(A,B) {
+fun mat_outer2(A,B) {
     let C = .in .dram(Matrix<R>)(A.M*B.M,A.N*B.N)
     Z<[,)> m = [0,B.M)
     Z<[,)> n = [0,B.N)
