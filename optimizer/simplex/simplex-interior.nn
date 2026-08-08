@@ -1,0 +1,162 @@
+/*
+Solve: 
+        c .* x        c, x .el <R>^N
+Subject to: 
+        A .* x < b    x .el <R>^N .& b .el <R>^M
+        x >= 0.0
+*/
+
+
+const <R> epsilon = 1.0e-14
+
+<SimplexResult> .extends <Enums>{0} {
+    SOLVED,
+    UNBOUNDED,
+    UNFEASABLE,
+    DEGENERATE,
+    FEASABLE
+}
+
+<Ordering> .extends <Enums>{0} {
+    LEQ,
+    GEQ,
+    EQ
+}
+
+
+
+<Constraint> |-> <Constraint>   :: (Vect<R> coefs, <Ordering> ord, <R> bound)
+//
+//
+<Constraint> .extends <O> (coefs,ord,bound) {
+    //
+    .if ( bound < 0 ) {
+        bound = -bound
+        coefs <- -coefs      // break reference ... don't overwrite argument, causes allocation
+        if ( ord != EQ ) {
+            ord = (ord == LEQ) ? GEQ : LEQ
+        }
+    }
+    // 
+    O.<R>           constant    = bound
+    O.<Ordering>    ord         = ord
+    O.Vect<R>       coefs       = Vect<>.concat([bound],-coefs)
+    //
+    <O.Z> slack = 0
+    if ( ord != EQ ) {
+        O.slack = (ord == LEQ) ? -1 : 1
+    }
+    //
+} .methods {
+//
+}
+
+
+
+<Objective> |-> <Objective>   :: (Vect<R> coefs)
+//
+<Objective> .extends <Constraint> (coefs) {
+    super(coefs, EQ, 0.0)
+} .methods {
+//
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+// INTERIOR POINT
+
+import numpy as np
+
+def interior_point_lp(c, A, b, max_iter=100, tol=1e-6):
+    """
+    Solves the linear programming problem:
+        min c^T x  s.t.  A x = b, x >= 0
+    Using a Primal-Dual Interior Point Method.
+    """
+    m, n = A.shape
+    
+    # 1. Initialize variables strictly inside the interior (x > 0, s > 0)
+    x = np.ones(n)
+    y = np.zeros(m)
+    s = np.ones(n)
+    
+    for i in range(max_iter):
+        # Compute residuals
+        rp = b - A @ x                     # Primal residual
+        rd = c - A.T @ y - s               # Dual residual
+        rc = x * s                         # Complementary slackness
+        
+        # Calculate duality gap and barrier parameter mu
+        duality_gap = np.dot(x, s) / n
+        if np.linalg.norm(rp) < tol and np.linalg.norm(rd) < tol and duality_gap < tol:
+            print(f"Converged in {i} iterations.")
+            return x, y, s
+            
+        # Target a reduced duality gap parameter (centering parameter)
+        sigma = 0.1
+        mu = sigma * duality_gap
+        
+        # 2. Formulate the KKT (Newton) system matrix
+        # Matrix form: 
+        # [  A      0      0  ] [dx]   [rp]
+        # [  0     A^T     I  ] [dy] = [rd]
+        # [  S      0      X  ] [ds]   [mu*e - X*S*e]
+        
+        X = np.diag(x)
+        S = np.diag(s)
+        
+        # Build block matrix rows
+        row1 = np.block([A, np.zeros((m, m)), np.zeros((m, n))])
+        row2 = np.block([np.zeros((n, n)), A.T, np.eye(n)])
+        row3 = np.block([S, np.zeros((n, m)), X])
+        
+        KKT_matrix = np.block([[row1], [row2], [row3]])
+        KKT_rhs = np.concatenate([rp, rd, mu * np.ones(n) - rc])
+        
+        # 3. Solve for the search directions
+        delta = np.linalg.solve(KKT_matrix, KKT_rhs)
+        dx = delta[0:n]
+        dy = delta[n:n+m]
+        ds = delta[n+m:]
+        
+        # 4. Step size control (ratio test to keep variables strictly positive)
+        alpha_p = 1.0
+        alpha_d = 1.0
+        
+        # Primal step restriction
+        idx_p = np.where(dx < 0)[0]
+        if len(idx_p) > 0:
+            alpha_p = 0.99 * np.min(-x[idx_p] / dx[idx_p])
+            
+        # Dual step restriction
+        idx_d = np.where(ds < 0)[0]
+        if len(idx_d) > 0:
+            alpha_d = 0.99 * np.min(-s[idx_d] / ds[idx_d])
+            
+        # 5. Update iterates
+        x = x + alpha_p * dx
+        y = y + alpha_d * dy
+        s = s + alpha_d * ds
+
+    print("Reached maximum iterations without total convergence.")
+    return x, y, s
+
+# --- Example Usage ---
+if __name__ == "__main__":
+    # Minimize: -2x1 - 3x2
+    # Subject to: 
+    #   1x1 + 2x2 + x3     = 4  (x3 is slack variable)
+    #   1x1 + 1x2      + x4 = 3  (x4 is slack variable)
+    
+    c = np.array([-2.0, -3.0, 0.0, 0.0])
+    A = np.array([
+        [1.0, 2.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0, 1.0]
+    ])
+    b = np.array([4.0, 3.0])
+    
+    x_opt, y_opt, s_opt = interior_point_lp(c, A, b)
+    print("Optimal Primal x:", np.round(x_opt, 4))
+
+*/

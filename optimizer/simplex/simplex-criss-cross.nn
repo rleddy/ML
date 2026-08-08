@@ -1,0 +1,171 @@
+/*
+Solve: 
+        c .* x        c, x .el <R>^N
+Subject to: 
+        A .* x < b    x .el <R>^N .& b .el <R>^M
+        x >= 0.0
+*/
+
+
+const <R> epsilon = 1.0e-14
+
+<SimplexResult> .extends <Enums>{0} {
+    SOLVED,
+    UNBOUNDED,
+    UNFEASABLE,
+    DEGENERATE,
+    FEASABLE
+}
+
+<Ordering> .extends <Enums>{0} {
+    LEQ,
+    GEQ,
+    EQ
+}
+
+
+
+<Constraint> |-> <Constraint>   :: (Vect<R> coefs, <Ordering> ord, <R> bound)
+//
+//
+<Constraint> .extends <O> (coefs,ord,bound) {
+    //
+    .if ( bound < 0 ) {
+        bound = -bound
+        coefs <- -coefs      // break reference ... don't overwrite argument, causes allocation
+        if ( ord != EQ ) {
+            ord = (ord == LEQ) ? GEQ : LEQ
+        }
+    }
+    // 
+    O.<R>           constant    = bound
+    O.<Ordering>    ord         = ord
+    O.Vect<R>       coefs       = Vect<>.concat([bound],-coefs)
+    //
+    <O.Z> slack = 0
+    if ( ord != EQ ) {
+        O.slack = (ord == LEQ) ? -1 : 1
+    }
+    //
+} .methods {
+//
+}
+
+
+
+<Objective> |-> <Objective>   :: (Vect<R> coefs)
+//
+<Objective> .extends <Constraint> (coefs) {
+    super(coefs, EQ, 0.0)
+} .methods {
+//
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+// criss cross
+/**
+import numpy as np
+
+def criss_cross(c, A, b):
+    """
+    Solves the Linear Programming problem using the Criss-Cross algorithm:
+    min c^T x
+    s.t. A x <= b
+         x >= 0
+    
+    Returns the optimal solution vector and optimal objective value.
+    """
+    m, n = A.shape
+    
+    # Construct the initial tableau
+    # Tableau layout:
+    # [ I   A   |  b ]
+    # [ 0  c^T  |  0 ]
+    I = np.eye(m)
+    tableau = np.hstack((I, A, b.reshape(-1, 1)))
+    cost_row = np.hstack((np.zeros(m), c, 0))
+    tableau = np.vstack((tableau, cost_row))
+    
+    num_vars = m + n
+    
+    while True:
+        # 1. Separate basic and non-basic partitions
+        # In simple tabular form, we scan the constraints (rows 0 to m) and the objective (row m+1)
+        # Primal variables are elements 0 to num_vars-1
+        x_vals = tableau[:-1, -1]   # column
+        z_vals = tableau[-1, :-1]   # row
+        
+        # Check termination: If all primal and dual variables >= 0
+        if np.all(x_vals >= 0) and np.all(z_vals >= 0):
+            break
+            
+        # 2. Select the index to pivot
+        # Find any negative primal variable
+        violating_primal = np.where(x_vals < 0)[0]
+        if len(violating_primal) > 0:
+            p = violating_primal[0] # Pivot row
+            
+            # Find a suitable entering variable (q) by scanning dual values
+            # (Criss-Cross rule: find negative element in the pivot row)
+            row_elements = tableau[p, :-1]
+            violating_dual = np.where((row_elements < 0))[0]
+            if len(violating_dual) == 0:
+                raise ValueError("Problem is unbounded or infeasible")
+            q = violating_dual[0] # Pivot column
+            
+        else:
+            # Find any negative dual/reduced-cost variable
+            violating_dual = np.where(z_vals < 0)[0]
+            if len(violating_dual) == 0:
+                break
+            q = violating_dual[0] # Pivot column
+            
+            # Find the row to leave
+            col_elements = tableau[:-1, q]
+            valid_rows = np.where(col_elements > 0)[0]
+            if len(valid_rows) == 0:
+                raise ValueError("Problem is unbounded or infeasible")
+            # Minimal ratio test
+            ratios = x_vals[valid_rows] / col_elements[valid_rows]
+            p = valid_rows[np.argmin(ratios)] # Pivot row
+            
+        # 3. Pivot Operation
+        pivot_val = tableau[p, q]
+        
+        # Normalize the pivot row
+        tableau[p, :] = tableau[p, :] / pivot_val
+        
+        # Eliminate the rest of the column
+        for r in range(tableau.shape[0]):
+            if r != p:
+                multiplier = tableau[r, q]
+                tableau[r, :] = tableau[r, :] - multiplier * tableau[p, :]
+
+    # Extract Results
+    optimal_x = np.zeros(num_vars)
+    for i in range(m):
+        # Identify basic variables in the columns
+        col = tableau[:-1, i]
+        if np.sum(col == 1) == 1 and np.sum(col == 0) == m - 1:
+            row_idx = np.where(col == 1)[0][0]
+            optimal_x[i] = tableau[row_idx, -1]
+            
+    optimal_value = tableau[-1, -1]
+    return optimal_x[:n], optimal_value
+
+# Example usage:
+# Minimize -x1 - 3x2
+# Subject to 
+# x1 + x2 <= 4
+# x1 + 2x2 <= 5
+c = np.array([-1.0, -3.0])
+A = np.array([[1.0, 1.0], [1.0, 2.0]])
+b = np.array([4.0, 5.0])
+
+x_opt, z_opt = criss_cross(c, A, b)
+print("Optimal x:", x_opt)
+print("Optimal Value:", z_opt)
+
+

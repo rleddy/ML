@@ -1,0 +1,470 @@
+/*
+Solve: 
+        c .* x        c, x .el <R>^N
+Subject to: 
+        A .* x < b    x .el <R>^N .& b .el <R>^M
+        x >= 0.0
+*/
+
+
+const <R> epsilon = 1.0e-14
+
+<SimplexResult> .extends <Enums>{0} {
+    SOLVED,
+    UNBOUNDED,
+    UNFEASABLE,
+    DEGENERATE,
+    FEASABLE
+}
+
+<Ordering> .extends <Enums>{0} {
+    LEQ,
+    GEQ,
+    EQ
+}
+
+
+
+<Constraint> |-> <Constraint>   :: (Vect<R> coefs, <Ordering> ord, <R> bound)
+//
+//
+<Constraint> .extends <O> (coefs,ord,bound) {
+    //
+    .if ( bound < 0 ) {
+        bound = -bound
+        coefs <- -coefs      // break reference ... don't overwrite argument, causes allocation
+        if ( ord != EQ ) {
+            ord = (ord == LEQ) ? GEQ : LEQ
+        }
+    }
+    // 
+    O.<R>           constant    = bound
+    O.<Ordering>    ord         = ord
+    O.Vect<R>       coefs       = Vect<>.concat([bound],-coefs)
+    //
+    <O.Z> slack = 0
+    if ( ord != EQ ) {
+        O.slack = (ord == LEQ) ? -1 : 1
+    }
+    //
+} .methods {
+//
+}
+
+
+
+<Objective> |-> <Objective>   :: (Vect<R> coefs)
+//
+<Objective> .extends <Constraint> (coefs) {
+    super(coefs, EQ, 0.0)
+} .methods {
+//
+}
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// BIG M
+import numpy as np
+
+def solve_simplex(c, A, b, operators, is_max=True, M=1000.0):
+    """
+    Solves a Linear Programming problem using the Big-M method.
+    
+    :param c: 1D array of coefficients for the objective function (size n)
+    :param A: 2D array of constraint coefficients (size m x n)
+    :param b: 1D array of constraint RHS values (size m)
+    :param operators: List of strings, e.g., ['<=', '>=', '=']
+    :param is_max: Boolean, True for maximization, False for minimization
+    :param M: Float, representing the arbitrarily large penalty for artificial variables
+    :return: Dictionary containing status, optimal variables, and optimal value
+    """
+    c = np.array(c, dtype=float)
+    A = np.array(A, dtype=float)
+    b = np.array(b, dtype=float)
+    m, n = A.shape
+    
+    # 1. Convert to Maximization and ensure b >= 0
+    if not is_max:
+        c = -c
+    for i in range(m):
+        if b[i] < 0:
+            b[i] = -b[i]
+            A[i] = -A[i]
+            if operators[i] == '<=': operators[i] = '>='
+            elif operators[i] == '>=': operators[i] = '=':
+            # Surplus variable (-s) and Artificial variable (+a)
+            col1 = np.zeros((m, 1)); col1[i, 0] = -1
+            col2 = np.zeros((m, 1)); col2[i, 0] = 1
+            constraint_matrix = np.hstack([constraint_matrix, col1, col2])
+            tableau_c = np.append(tableau_c, [0, -M if is_max else M])
+            artif_vars.append(constraint_matrix.shape[1] - 1)
+        elif operators[i] == '=':
+            # Artificial variable (+a)
+            col = np.zeros((m, 1)); col[i, 0] = 1
+            constraint_matrix = np.hstack([constraint_matrix, col])
+            tableau_c = np.append(tableau_c, -M if is_max else M)
+            artif_vars.append(constraint_matrix.shape[1] - 1)
+
+    # Build final tableau
+    tableau = np.hstack([constraint_matrix, b.reshape(-1, 1)])
+    c_row = np.hstack([tableau_c, 0])
+    
+    # Update cost row to eliminate -M/M of artificial variables from the objective function
+    for idx in artif_vars:
+        c_row -= (c_row[idx] * tableau[list(constraint_matrix[:, idx]).index(1), :])
+
+    tableau = np.vstack([tableau, c_row])
+
+    # 3. Simplex Iterations
+    while True:
+        last_row = tableau[-1, :-1]
+        
+        # Check optimal condition
+        if (is_max and np.all(last_row <= 1e-9)) or (not is_max and np.all(last_row >= -1e-9)):
+            break
+            
+        # Entering variable
+        if is_max:
+            j = np.argmin(last_row) # Most negative
+        else:
+            j = np.argmax(last_row) # Most positive
+            
+        if tableau[-1, j] >= -1e-9 and is_max: break
+        if tableau[-1, j] <= 1e-9 and not is_max: break
+
+        # Minimum ratio test for leaving variable
+        ratios = []
+        for i in range(m):
+            val = tableau[i, j]
+            if val > 1e-9:
+                ratios.append(tableau[i, -1] / val)
+            else:
+                ratios.append(np.inf)
+                
+        if np.all(np.array(ratios) == np.inf):
+            return {"status": "Unbounded"}
+
+        i = np.argmin(ratios)
+        
+        # Pivot
+        pivot = tableau[i, j]
+        tableau[i, :] /= pivot
+        for k in range(tableau.shape[0]):
+            if k != i:
+                tableau[k, :] -= tableau[k, j] * tableau[i, :]
+
+    # 4. Extract Results
+    opt_val = tableau[-1, -1]
+    if not is_max: opt_val = -opt_val
+    
+    vars_res = np.zeros(n)
+    for col in range(n):
+        col_vec = tableau[:-1, col]
+        if np.sum(col_vec) == 1 and np.count_nonzero(col_vec) == 1:
+            row_idx = np.where(col_vec == 1)[0][0]
+            vars_res[col] = tableau[row_idx, -1]
+
+    # Sanity check: ensure artificial variables are driven to zero
+    for idx in artif_vars:
+        col_vec = tableau[:-1, idx]
+        if np.sum(col_vec) == 1 and np.count_nonzero(col_vec) == 1:
+            row_idx = np.where(col_vec == 1)[0][0]
+            if tableau[row_idx, -1] > 1e-6:
+                return {"status": "Infeasible"}
+
+    return {"status": "Optimal", "optimal_values": vars_res, "optimal_objective": opt_val}
+
+
+
+
+
+
+// R VERSION
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' construct_tableau
+#'
+#' Construct an initial simplex tableau of the linear program for given A, b, c, sense (max = 1, min = -1), relation ({"<=", "=", "=>"}).
+#'
+#' @param A \code{matrix}, coefficient matrix of the LP
+#' @param b \code{vector}, RHS
+#' @param c \code{vector}, coefficients of the objective function
+#' @param sense \code{scalar}, max = 1, min = -1 (default = 1)
+#' @param relation \code{vector}, {"<=", "=", "=>"} (default = "<=")
+#' @param bigM \code{scalar}, M used in bigM-method (default = 1000)
+#'
+#' @return \code{matrix}, initial (primal feasible) simplex tableau
+#' @export
+#'
+construct_tableau <- function(A, b, c, sense = 1, relation = rep("<=", length(b)), bigM = 1000) {
+  #
+  print("Start constructing Simplex Tableau")
+  #
+  n <- ncol(A)
+  m <- nrow(A)
+  #
+  # negative RHS
+  #
+  for (i in 1:m) {
+    if (b[i] < 0) {
+      A[i, ] <- -1 * A[i, ]
+      b[i] <- -1 * b[i]
+      if (relation[i] == "<=") {
+        relation[i] <- ">="
+      }
+      else if (relation[i] == ">=") {
+        relation[i] <- "<="
+      }
+    }
+  }
+  #
+  # transform all constraints in [=]-form with a slack or artificial variable
+  # "<=" -> add slack variable
+  # "="  -> add artificial variable
+  # ">=" -> add -1 * slack and artificial variable
+  #
+  artificial_variable_index_set <- c()
+  artificial_variable_row_index_set <- c()
+  for (i in 1:m) {
+    if (relation[i] == "<=") {
+      # add slack variable s >= 0
+      c <- c(c, 0)
+      A <- cbind(A, s = diag(m)[, i])
+    }
+    else if (relation[i] == ">=") {
+      # add -slack variable s >= 0
+      c <- c(c, 0)
+      A <- cbind(A, s = -1 * diag(m)[, i])
+      # add artificial variable v >= 0
+      if (sense == 1){
+        c <- c(c, -bigM)
+      } else {
+        c <- c(c, bigM)
+      }
+      A <- cbind(A, v = diag(m)[, i])
+      artificial_variable_index_set <- c(artificial_variable_index_set, ncol(A))
+      artificial_variable_row_index_set <- c(artificial_variable_row_index_set, i)
+    }
+    else if (relation[i] == "=") {
+      # add artificial variable v >= 0
+      if (sense == 1){
+        c <- c(c, -bigM)
+      } else {
+        c <- c(c, bigM)
+      }
+      A <- cbind(A, v = diag(m)[, i])
+      artificial_variable_index_set <- c(artificial_variable_index_set, ncol(A))
+      artificial_variable_row_index_set <- c(artificial_variable_row_index_set, i)
+    }
+    else {
+      print("Error")
+    }
+  }
+  # sense = 1 ~ max, sense = -1 ~ min
+  #
+  if (sense == 1) { # max # check if min and big-M case is captured!!!
+    c <- -1 * c
+  }
+  else {
+    print("Minimization problem: remember to multiply the optimal objective value by (-1)!")
+  }
+  # combine c,A,b
+  tableau <- rbind(cbind(A, b), z = c(c, 0))
+  #
+  print("Tableau constructed")
+  #
+  if (length(artificial_variable_index_set) > 0) {
+    print(
+      paste("Artificial variable 'v' added at column ", artificial_variable_index_set, "and row ", artificial_variable_row_index_set, " -> phase I algorithm required")
+    )
+    #
+    print(
+      paste0("BigM-method is used, with bigM = ", bigM)
+    )
+    #
+    # transform the objective function (depending on the method) but only bigM-method considered atm
+    for (k in artificial_variable_row_index_set) {
+      tableau[m + 1, ] <- tableau[m + 1, ] - bigM * tableau[k, ]
+    }
+  }
+  #
+  return(tableau)
+}
+
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' optimality_check
+#'
+#' Checks if the current tableau is (primal) optimality.
+#'
+#' @param t \code{matrix}, a simplex tableau
+#'
+#' @return \code{logical}, TRUE = tableau is optimal, FALSE = tableau is not optimal
+#' @export
+#'
+optimality_check <- function(t) {
+  if (min(t[nrow(t), 1:(ncol(t) - 1)]) < 0) {
+    return(FALSE) # not optimal
+  }
+  else {
+    return(TRUE) # optimal
+  }
+}
+
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' get_pivot_column
+#'
+#' Choose the first nonbasic column with the lowest negative (reduced) cost.
+#'
+#' @param t \code{matrix}, a simplex tableau
+#'
+#' @return \code{scalar}, index of the pivot column
+#' @export
+#'
+get_pivot_column <- function(t) { # pricing
+  return(which.min(t[nrow(t), 1:(ncol(t) - 1)]))
+}
+
+### ------------------------------------------------------------------------------------------------
+
+#' get_pivot_column_Bland
+#'
+#' Choose the lowest-numbered (i.e., leftmost) nonbasic column with a negative (reduced) cost.
+#'
+#' @param t \code{matrix}, a simplex tableau
+#'
+#' @return \code{scalar}, index of the pivot column
+#' @export
+#'
+get_pivot_column_Bland <- function(t) { # pricing
+  which(t[nrow(t), 1:(ncol(t) - 1)] <= 0)[1]
+}
+
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' get_pivot_row
+#'
+#' @param t \code{matrix}, a simplex tableau
+#' @param pivot_column \code{scalar}, index of the pivot column
+#'
+#' @return \code{scalar}, index of the pivot row
+#' @export
+#'
+get_pivot_row <- function(t, pivot_column) {
+  lhs <- t[1:(nrow(t) - 1), pivot_column]
+  rhs <- t[1:(nrow(t) - 1), ncol(t)]
+  if (max(lhs) < 0) {
+    print("Problem is unbounded -> stop execution")
+    # break
+    return(-1)
+  }
+  else {
+    theta <- vector(mode = "double", length = (nrow(t) - 1))
+    for (i in 1:(nrow(t) - 1)) {
+      if (lhs[i] > 0) {
+        theta[i] <- rhs[i] / lhs[i]
+      } else {
+        theta[i] <- Inf
+      }
+    }
+    return(which.min(theta))
+  }
+}
+
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' pivot
+#'
+#' Performs a pivot operation an a given simplex tableau
+#'
+#' @param t \code{matrix}, a simplex tableau
+#' @param pivot_row \code{scalar}, index of the pivot column
+#' @param pivot_column \code{scalar}, index of the pivot row
+#'
+#' @return \code{matrix}, new simplex tableau
+#' @export
+#'
+pivot <- function(t, pivot_row, pivot_column) {
+  pivot_element <- t[pivot_row, pivot_column]
+  t[pivot_row, ] <- t[pivot_row, ] / pivot_element
+  for (r in 1:nrow(t)) {
+    if (r != pivot_row) {
+      t[r, ] <- t[r, ] - t[r, pivot_column] * t[pivot_row, ]
+    }
+  }
+  return(t)
+}
+
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' simplex
+#'
+#' @param tableau \code{matrix}, simplex tableau in canonical form
+#' @param max_iter \code{scalar}, maximum number of iterations
+#'
+#' @return optimal simplex tableau or stops execution in case of an unbounded problem
+#' @export
+#'
+simplex <- function(tableau, max_iter = 100) {
+  print("Initial Tableau (Tableau 0)")
+  print(tableau)
+  iter <- 1
+  while (!optimality_check(tableau) & iter < max_iter) {
+    print("--------------------------------------------------------------------")
+    print(paste("Iteration", iter))
+    print("--------------------------------------------------------------------")
+    pivot_column <- get_pivot_column(tableau)
+    print(paste("Pivot column:", pivot_column))
+    pivot_row <- get_pivot_row(tableau, pivot_column)
+    if (pivot_row == -1) {
+      break()
+    }
+    print(paste("Pivot row:", pivot_row))
+    tableau <- pivot(tableau, pivot_row, pivot_column)
+    print(paste("New tableau at the end of iteration", iter))
+    print(tableau)
+    iter <- iter + 1
+  }
+  print("--------------------------------------------------------------------")
+  print("Status: End")
+  print("--------------------------------------------------------------------")
+  return(tableau)
+}
+
+### ------------------------------------------------------------------------------------------------
+###
+### ------------------------------------------------------------------------------------------------
+
+#' simplexR
+#'
+#' Solves (find an optimal solution or reports that the problem is not solveable) a generic linear program. Calls \code{construct_tableau} and \code{simplex}.
+#'
+#' @param A \code{matrix}, coefficient matrix of the LP
+#' @param b \code{vector}, RHS
+#' @param c \code{vector}, coefficients of the objective function
+#' @param sense \code{scalar}, max = 1, min = -1 (default = 1)
+#' @param relation \code{vector}, {"<=", "=", "=>"} (default = "<=")
+#' @param max_iter \code{scalar}, maximum number of iterations (default = 100)
+#'
+#' @return Solves (find an optimal solution or reports that the problem is not solveable) a generic linear program. Calls \code{construct_tableau} and \code{simplex}.
+#' @export
+#'
+simplexR <- function(A, b, c, sense = 1, relation = rep("<=", length(b)), max_iter = 100) {
+  tableau <- construct_tableau(A, b, c, sense, relation)
+  simplex(tableau = tableau, max_iter = max_iter)
+}

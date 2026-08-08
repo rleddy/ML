@@ -1,0 +1,1035 @@
+/*
+Solve: 
+        c .* x        c, x .el <R>^N
+Subject to: 
+        A .* x < b    x .el <R>^N .& b .el <R>^M
+        x >= 0.0
+*/
+
+
+const <R> epsilon = 1.0e-14
+
+<SimplexResult> .extends <Enums>{0} {
+    SOLVED,
+    UNBOUNDED,
+    UNFEASABLE,
+    DEGENERATE,
+    FEASABLE
+}
+
+<Ordering> .extends <Enums>{0} {
+    LEQ,
+    GEQ,
+    EQ
+}
+
+
+
+<Constraint> |-> <Constraint>   :: (Vect<R> coefs, <Ordering> ord, <R> bound)
+//
+//
+<Constraint> .extends <O> (coefs,ord,bound) {
+    //
+    .if ( bound < 0 ) {
+        bound = -bound
+        coefs <- -coefs      // break reference ... don't overwrite argument, causes allocation
+        if ( ord != EQ ) {
+            ord = (ord == LEQ) ? GEQ : LEQ
+        }
+    }
+    // 
+    O.<R>           constant    = bound
+    O.<Ordering>    ord         = ord
+    O.Vect<R>       coefs       = Vect<>.concat([bound],-coefs)
+    //
+    <O.Z> slack = 0
+    if ( ord != EQ ) {
+        O.slack = (ord == LEQ) ? -1 : 1
+    }
+    //
+} .methods {
+//
+}
+
+
+
+<Objective> |-> <Objective>   :: (Vect<R> coefs)
+//
+<Objective> .extends <Constraint> (coefs) {
+    super(coefs, EQ, 0.0)
+} .methods {
+//
+}
+
+
+<simplex_build> |-> <Matrix<R>,<SimplexResult>> :: (<Objective> objective, List<Contraint> contraints)
+//
+//
+fun simplex_build(objective,contraints) {
+
+    <Z> neg_slack_count = 0
+    <Z> pos_slack_count = 0
+    <Z> no_slack_count = 0
+    .for each ( contraints c ) {
+        .if ( c.slack != 0 ) {
+            .if ( c.slack < 0 ) {
+                neg_slack_count++
+            } .else {
+                pos_slack_count++
+            }
+        } .else no_slack_count++
+    }
+
+    // Matrix<>.set_alloc_context(a_context)
+    
+    // if this is allocation to cells, then the book keepers will be eliminated on return, leaving book keeping up to A
+    // if this is in RAM, then these will be deleted after A is constructed
+    // initially zero rows are created, they are all added in the next loop
+    <Z> aritificial_count = no_slack_count + neg_slack_count
+    <Z> slack_variabl_count = pos_slack_count + neg_slack_count
+    //
+    Matrix<R> c_leqs = .in .ephemeral Matrix<R>.make(0,objective.coefs.N + slack_variabl_count)
+    Matrix<R> c_geqs = .in .ephemeral Matrix<R>.make(0,objective.coefs.N + slack_variabl_count)
+    Matrix<R> c_eqs  = .in .ephemeral Matrix<R>.make(0,objecc_leqstive.coefs.N + slack_variabl_count)
+    //
+    <Z> N = contraints.coefs.N
+    <Z> slack_offset = 1
+    .for each ( contraints c ) {
+        .if ( c.slack == 0 ) {
+            c_eqs.add_row(c.coefs)      // equalities will be assigned artificial variables
+        } .else {
+            c_leqs.add_row(c.coefs)
+            c_leqs[.last,N+slack_offset] = c.slack  // slack column of the objective
+            slack_offset++
+        }
+    }
+
+    Matrix<R> A = Matrix<R>.vstack(c_leqs,c_geqs,c_eqs)
+
+    .if ( c_geqs.M > 0 || c_eqs.M > 0 ) {
+        Matrix<R> A_hat = .in .ephemeral Matrix<R>.vstack(A,objective)
+        <SimplexResult> state;
+        (A_hat,state) = simplex_phase_1(A_hat,neg_slack_count,pos_slack_count,no_slack_count)
+        .if ( state !== FEASABLE ) {
+            .delete A
+            -(-> (.null,state)
+        }
+        A = A_hat
+    }
+
+    :)-> (A,FEASABLE)
+}
+
+
+<simplex_phase_1> |-> <Matrix<R>,<SimplexResult>> :: (Matrix<R> A,<Z> neg_slack_count,<Z> pos_slack_count,<Z> no_slack_count )
+//
+fun simplex_phase_1(A,neg_slack_count,pos_slack_count,no_slack_count) {
+    <Z> i = [0,A.M)
+    const <Z> const_col = 0
+    Vect<R> aux_z = .in ephemeral Vect<R>(A.N)
+    .for up i {
+        aux_z += A[i,..]
+    }
+    aux_z = -aux_z   // negate artificial auxiliary
+
+    Z<[,)> i = [0,aux_z.N)
+    Set<Var<Z>> zero_vars = .{ (Var<Z>) | .for up i { .if aux_z[i] == 0.0 .then { Var<Z>.make(i,i) } } }
+    Set<Var<Z>> objective_vars = .{ (Var<Z>) | .for up i { .if aux_z[i] != 0.0 .then { Var<Z>.make(i,i) } } }
+    //
+    Z<[,)> no_slack_offset = [0,(neg_slack_count + pos_slack_count))
+    Set<Z> artifical_variables = .{ (Var<Z>) | .for up no_slack_offset { no_slack_offset } }
+
+    Z<[,)> i = [neg_slack_count,(neg_slack_count + pos_slack_count))
+    Set<Z> pos_slack_rows = i.to_set()
+
+    .forever {
+        <Var<Z>,R> (column,bmax) = (argmax,max)(aux_z.|(objective_vars))
+        .if ( bmax < epsilon ) {
+            <R> objective_const = aux_z[const_col]
+            .if ( objective_const < -epsilon ) { // too big in the wrong directions
+                -(-> (.null,UNFEASABLE)
+            } .else .if ( objective_const < epsilon ) {  // very close to zero
+                .while ( !(artifical_variables.empty()) ) {
+                    <Z> row = artifical_variables.extract(1)        // extract ... pull out and remove
+                    <Var<Z>,R> (column,bmax) = (argmax,absmax)(A[row,..].|(objective_vars))
+                    .if ( bmax > epsilon ) {
+                        simplex_exchange(aux_z,A,row,column);
+                        // other conditions?
+                    }
+                }
+                .while ( !(pos_slack_rows.empty()) ) {
+                    <Z> row = pos_slack_rows.extract(1)             // extract    .forever {
+        <Var<Z>,R> (column,bmax) = (argmax,max)(aux_z.|(objective_vars))
+        .if ( bmax < epsilon ) {
+            <R> objective_const = aux_z[const_col]
+            .if ( objective_const < -epsilon ) { // too big in the wrong directions
+                -(-> (.null,UNFEASABLE)
+            } .else .if ( objective_const < epsilon ) {  // very close to zero
+                .while ( !(artifical_variables.empty()) ) {
+                    <Z> row = artifical_variables.extract(1)        // extract ... pull out and remove
+                    <Var<Z>,R> (column,bmax) = (argmax,absmax)(A[row,..].|(objective_vars))
+                    .if ( bmax > epsilon ) {
+                        simplex_exchange(aux_z,A,row,column);
+                        // other conditions?
+                    }
+                }
+                .while ( !(pos_slack_rows.empty()) ) {
+                    <Z> row = pos_slack_rows.extract(1)             // extract ... pull out and remove
+                    A[row,..] *= -1
+                }
+                :)-> (A,FEASABLE)
+            }
+            <Var<Z>,<SimplexResult>,R> (row,state,bmax) = (argmax,calc_min(*,*))((A[..,const_col],A[..,column])
+        } ... pull out and remove
+                    A[row,..] *= -1
+                }
+                :)-> (A,FEASABLE)
+            }
+            <Var<Z>,<SimplexResult>,R> (row,state,bmax) = (argmax,calc_min(*,*))((A[..,const_col],A[..,column])
+        }
+        //
+        <Z> row = pivot_row_search(A,column)
+        simplex_exchange(aux_z,A,row,column);
+        // 
+        // conditions 
+        .if ( row .el pos_slack_rows ) {
+            pos_slack_rows \= row
+            aux_z[column]++
+            A[..,column] *= -1
+        }
+        //
+        objective_vars \= column
+        objective_vars += .{ row }
+        zero_vars \= row
+        zero_vars += .{ column }
+        //
+    }
+}
+
+
+<calc_min> |-> <<SimplexResult>,<R>,<Z>> :: (Vect<R> column,Vect<R> consts)
+
+fun calc_min(column,consts) {
+    <Z> N = consts.N
+    Z<[,)> i = [0,N)
+    <Z> smallest_count = 0
+    <Z> neg_col_count = 0
+    <Z> min_i = 0
+    <R> min_value = infinity
+    .for up i {
+        <R> coef = column[i]
+        .if ( coef < 0.0 ) { neg_col_count++; .continue }
+        <R> cv = consts[i]
+        <R> ratio = calc_min_op(cv,coef)
+        .if ( ratio < epsilon ) {
+            smallest_count++
+        }
+        if ( ratio < min_value ) {
+            min_value = ratio
+            min_i = i
+        }
+    }
+
+    <SimplexResult> state = FEASABLE
+    .if (  smallest_count > 1 ) state = DEGENERATE
+    .else if ( neg_col_count == N ) state = UNBOUNDED
+
+    :)-> (state,min_value,min_i)
+}
+
+
+
+fun calc_min_op(const_value,row_coeff) {
+    :)-> ( row_coeff < epsilon ) ? 0.0 : const_value/row_coeff
+}
+
+
+
+
+
+<simplex_travel> |-> <Vect<R>,<SimplexResult>,<R>> :: (Matrix<R> A,Vect<Z> columns,<Z> &pivot_column,Vect<Z> z_vars,Vect<Z> slack_vars)
+// The final phase of the simplex method
+// seeking to make the first column of the matrix 
+// the bearer of optimal variable values
+//
+fun simplex_travel(A, columns, pivot_column, z_vars, slack_vars) {
+    <<simplex_travel>|->> optimal = (UNFEASABLE,null,0)        // the type that this method returns 
+    .forever {
+        .if ( (simplex_column_test(A, 0, columns, pivot_column)).<B> ) {  // one pairs,triples, ... .first synonum for [0] ... .<B> as the first bool
+            optimal = (A[..,0],SOLVED,A[0,0])
+            break
+        } .else {
+            <Z> pivot_row = pivot_row_search(A,pivot_column)
+            .if ( pivot_row == 0 ) {
+                optimal = (UNBOUNDED,null,0)
+                break
+            } .else {
+                pivot_exchange(A,pivot_row,pivot_column)
+                swap(z_vars[pivot_column-1],slack_vars[pivot_row-1])
+            }
+        }
+    }
+    :)-> optimal
+}
+
+
+<simplex_column_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+// seek a column that has the 
+fun simplex_column_test(A, row, columns, &pivot_column) {
+    <B> passed = true
+    <R> bmax = 0.0
+    .if ( !(columns.empty()) ) {
+        <Z> k = columns.start() // iterator interal to vector 
+        pivot_column = k        // 
+        bmax = A[row,k]   // initial value
+        .while ( k = columns.next() ) { // update iterator with call to vector (but if k++ then compile this call)
+            let a_rk = A[row,k]         // possible update
+            (bmax, pivot_column) = ((a_rk - bmax) > 0.0) ? (a_rk,k) : .no_change   // .no_change -- dont update vars 
+        }
+        passed = (bmax <= epsilon)
+    }
+    :)-> (passed,bmax)
+}
+
+
+<simplex_column_fabs_test> |-> <<B>,<R>> :: (Matrix<R> A,<Z> row,Vect<Z> columns, <Z> &pivot_column)
+//
+fun simplex_column_fabs_test(A, row, columns, pivot_column) {
+    <B> passed = true
+    <R> bmax = 0.0
+    .if ( !(columns.empty()) ) {
+        <Z> k = columns.start()
+        pivot_column = k
+        bmax = A[row,k]   // initial value
+        .while ( k = columns.next() ) {
+            let a_rk = A[row,k]         // possible update
+            (bmax, pivot_column) = (((fabs(a_rk) - fabs(bmax)) > 0.0) ? (a_rk,k) : .no_change
+        }
+        passed = (bmax <= epsilon)
+    }
+    :)-> (passed,bmax)
+}
+
+
+
+<pivot_row_search> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
+//
+fun pivot_row_search(A,pivot_column) {
+    <Z> row = 0
+    <Z> kp = pivot_column + 1
+    //
+    Z<[,]> i = [1,A.M]
+    .for up i ( .with <Z> j = i+1 )  {
+        .if ( A[j,kp] < -epsilon ) .break
+    }
+    //
+    .if ( i.beyond_last() ) {    // i > A.M
+        :)-> 0
+    } .else {
+        row = i + 1
+        //
+        <R> q1 = -A[row,1]/A[row,kp];
+        //
+        Z<[,]> i = [row,A.M]
+        .for up i ( .with <Z> l = i+1 )  {
+            .if ( A[j,kp] < -epsilon ) {
+                <R> q = -A[l,1]/A[l,kp];
+                (row,q1) = (q .< q1) ? (i+1,q) : .no_change
+                .<?.else .if ( q1 == q ) {
+                    Z<[,]> k = [1,A.N]
+                    <R> q0, qp
+                    .for up k ( .with <Z> k1 = k + 1 ) {
+                        qp = -A[row,k1]/A[row,kp];
+                        q0 = -A[l,k1]/A[l,kp];
+                        .if (q0 != qp) break;
+                    }
+                    .if (q0 < qp) row=(i+1);
+                }
+            }
+        }
+    }
+    //
+    :)-> row
+}
+
+
+
+<pivot_row_search_PY> |-> <Z> :: (Matrix<R> A,<Z> pivot_column)
+//
+fun pivot_row_search_PY(A,pivot_column) {
+    <Z> row = 0
+    <Z> kp = pivot_column + 1
+    //
+    Z<[,]> i = [1,A.M]
+    //
+    <Z> i_hat = .first up i { <Z> | .with j = i+1; A[j,kp] < -epsilon }
+    //
+    .if ( i.beyond_last() ) {    // i > A.M
+        :)-> 0
+    } .else {
+        row = i_hat + 1
+        //
+        <R> q1 = -A[row,1]/A[row,kp];
+        //
+        Z<[,]> i = [row,A.M]
+        .update (row) .by
+        .looping up i ( .with <Z> l = i+1 )  {
+            .if ( A[j,kp] < -epsilon ) {
+                <R> q = -A[l,1]/A[l,kp];
+                (row,q1) = (q .< q1) ? (l,q) : .no_change
+                .<?.else .if ( q1 == q ) {
+                    Z<[,]> k = [1,A.N]
+                    <R,R> (q0, qp) = .first up k { <R,R> (q0,qp) | q0 != qp
+                                                    .with k1 = k+1
+                                                    .where {
+                                                        qp = -A[row,k1]/A[row,kp];
+                                                        q0 = -A[l,k1]/A[l,kp];
+                                                    }
+                                                }
+                    .if (q0 < qp) row = l;
+                }
+            }
+        }
+    }
+    //
+    :)-> row
+}
+
+
+
+<pivot_exchange> |-> <> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
+//
+fun pivot_exchange(A,pivot_row,pivot_column) {
+    //
+    const <R> pivot = 1.0/A[pivot_row,pivot_column];   // assume offsets are figured
+    Z<[,]> i = [1,A.M]
+    Z<[,]> j = [1,A.N]
+    //
+    .for up i ( .skip pivot_row ) {        // pivot elimination  // reset assumed otherwise say so
+        let row_mult = (A[i,pivot_column] *= pivot);
+        .for up j ( .skip pivot_column ) {
+            A[i,j] -= A[pivot_row,j]*row_mult;
+        }
+    }
+    //
+    .for up j ( .skip pivot_column ) {
+        A[pivot_row,j] *= -pivot;
+    }
+    //
+    A[pivot_row,pivot_column] = pivot
+}
+
+
+
+
+<pivot_exchange_PY> |-> <> :: (Matrix<R> A,<Z> pivot_row,<Z> pivot_column)
+//
+fun pivot_exchange_PY(A,pivot_row,pivot_column) {
+    //
+    const <R> pivot = 1.0/A[pivot_row,pivot_column];   // assume offsets are figured
+    Z<[,]> i = [1,A.M].skip(pivot_row)
+    Z<[,]> j = [1,A.N].skip(pivot_column)
+    //
+    A[i .up,pivot_column] *= pivot              // implicit in place map operation
+    A[i .up,j .up] -= A[pivot_row,j]*A[i,pivot_column];
+    //
+    A[pivot_row,j .up] *= -pivot;
+    //
+    A[pivot_row,pivot_column] = pivot
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+// sequence[start:stop:step]
+/*
+my_list = [10, 20, 30, 40, 50]
+
+# Get the last 3 items
+print(my_list[-3:])    
+# Output: [30, 40, 50]
+
+# Exclude the last item
+print(my_list[:-1])    
+# Output: [10, 20, 30, 40]
+
+# Slice between negative indices
+print(my_list[-4:-1])  
+# Output: [20, 30, 40]
+
+
+// in place modification
+
+data = [1, 2, 3, 4, 5, 6, 7, 8]
+
+# Define a function you want to apply
+def square(x):
+    return x ** 2
+
+# Apply function to the slice (e.g., index 2 to 6)
+data[2:6] = map(square, data[2:6]) 
+# or use: data[2:6] = [square(x) for x in data[2:6]]
+
+print(data) 
+# Output: [1, 2, 9, 16, 25, 36, 7, 8]
+
+
+*/
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+
+import numpy as np
+
+class SimplexSolver:
+    def __init__(self, c, A, b):
+        """
+        c: 1D array of coefficients for the objective function to maximize.
+        A: 2D array of constraint coefficients (LHS).
+        b: 1D array of constraint limits (RHS).
+        """
+        self.c = np.array(c, dtype=float)
+        self.A = np.array(A, dtype=float)
+        self.b = np.array(b, dtype=float)
+        
+        self.num_constraints, self.num_vars = self.A.shape
+        self.tableau = None
+        self._build_tableau()
+
+    def _build_tableau(self):
+        # Create an empty matrix for the tableau
+        # Rows = constraints + 1 (objective function row)
+        # Cols = decision variables + slack variables + 1 (RHS column)
+        num_rows = self.num_constraints + 1
+        num_cols = self.num_vars + self.num_constraints + 1
+        
+        self.tableau = np.zeros((num_rows, num_cols))
+        
+        # Populate constraints (A matrix and slack variables identity matrix)
+        self.tableau[:self.num_constraints, :self.num_vars] = self.A
+        self.tableau[:self.num_constraints, self.num_vars:self.num_vars + self.num_constraints] = np.eye(self.num_constraints)
+        self.tableau[:self.num_constraints, -1] = self.b
+        
+        # Populate the objective function row (bottom row)
+        # In a standard maximization tableau, we subtract coefficients: Z - cx = 0
+        self.tableau[-1, :self.num_vars] = -self.c
+        self.tableau[-1, -1] = 0 # Initial Z value
+
+    def _get_pivot_column(self):
+        # Find the most negative indicator in the bottom row (excluding RHS)
+        bottom_row = self.tableau[-1, :-1]
+        min_val = np.min(bottom_row)
+        if min_val < 0:
+            return np.argmin(bottom_row)
+        return -1 # Optimality reached
+
+    def _get_pivot_row(self, pivot_col):
+        # Apply the Minimum Ratio Test to find the leaving variable
+        rhs = self.tableau[:-1, -1]
+        col_values = self.tableau[:-1, pivot_col]
+        
+        ratios = []
+        for r, c_val in zip(rhs, col_values):
+            if c_val > 0:
+                ratios.append(r / c_val)
+            else:
+                ratios.append(np.inf) # Ignore non-positive entries
+                
+        min_ratio_idx = np.argmin(ratios)
+        if ratios[min_ratio_idx] == np.inf:
+            return -1 # Problem is unbounded
+        return min_ratio_idx
+
+    def _pivot(self, row, col):
+        # Normalize the pivot row to make the pivot element equal to 1
+        pivot_element = self.tableau[row, col]
+        self.tableau[row, :] /= pivot_element
+        
+        # Perform Gauss-Jordan elimination to eliminate other entries in pivot column
+        for r in range(self.tableau.shape[0]):
+            if r != row:
+                factor = self.tableau[r, col]
+                self.tableau[r, :] -= factor * self.tableau[row, :]
+
+    def solve(self):
+        while True:
+            pivot_col = self._get_pivot_column()
+            if pivot_col == -1:
+                break # Optimal solution found!
+                
+            pivot_row = self._get_pivot_row(pivot_col)
+            if pivot_row == -1:
+                raise ValueError("The linear program is Unbounded.")
+                
+            # Perform the basis exchange operation
+            self._pivot(pivot_row, pivot_col)
+            
+        return self._extract_solution()
+
+    def _extract_solution(self):
+        # Identify values of variables from the final identity-like matrix layout
+        optimal_x = np.zeros(self.num_vars)
+        for col in range(self.num_vars):
+            column = self.tableau[:-1, col]
+            # Check if the column is a basic column (contains exactly one '1' and rest '0's)
+            if np.sum(column == 1) == 1 and np.sum(column == 0) == self.num_constraints - 1:
+                row_idx = np.where(column == 1)[0][0]
+                optimal_x[col] = self.tableau[row_idx, -1]
+                
+        max_z = self.tableau[-1, -1]
+        return optimal_x, max_z
+
+# --- Example Execution ---
+if __name__ == "__main__":
+    # Maximize Z = 3x1 + 5x2
+    # Subject to:
+    #  x1 +  0x2 <= 4
+    #  0x1 + 2x2 <= 12
+    # 3x1 + 2x2 <= 18
+    
+    c = [3, 5]
+    A = [
+        [1, 0],
+        [0, 2],
+        [3, 2]
+    ]
+    b = [4, 12, 18]
+    
+    solver = SimplexSolver(c, A, b)
+    solution, max_val = solver.solve()
+    
+    print(f"Optimal Variables (x): {solution}")
+    print(f"Maximum Objective Value (Z): {max_val}")
+
+
+
+import numpy as np
+
+def simplex_phase1(A, b):
+    """
+    Solves Phase 1 of the Two-Phase Simplex Method.
+    A: Constraint matrix (m x n)
+    b: Right-hand side vector (m,)
+    Returns: Basic feasible solution, basis indices, or reports infeasibility.
+    """
+    m, n = A.shape
+    b = b.astype(float)
+    
+    # Ensure all b_i >= 0 by multiplying rows with negative b_i by -1
+    for i in range(m):
+        if b[i]  Maximize -1 * sum(artificial)
+    # Costs: 0 for original variables, -1 for artificial variables
+    c_phase1 = np.zeros(n + m)
+    c_phase1[n:] = -1.0
+    
+    # Initial basis: artificial variables columns n to n + m - 1
+    basis = list(range(n, n + m))
+    
+    # Run simplex iterations for Phase 1
+    max_iter = 100
+    for _ in range(max_iter):
+        # Compute reduced costs: c_j - z_j
+        # z_j = c_B * B^(-1) * A_j
+        B = A_phase1[:, basis]
+        try:
+            B_inv = np.linalg.inv(B)
+        except np.linalg.LinAlgError:
+            raise ValueError("Matrix B is singular. Basis is invalid.")
+            
+        c_B = c_phase1[basis]
+        pi = c_B @ B_inv  # Simplex multipliers
+        reduced_costs = c_phase1 - (pi @ A_phase1)
+        
+        # Check optimality (for maximization of negative sum, optimal if all reduced_costs <= 0)
+        if np.all(reduced_costs <= 1e-9):
+            break
+            
+        # Choose entering variable (most positive reduced cost)
+        enter_col = np.argmax(reduced_costs)
+        if reduced_costs[enter_col] <= 1e-9:
+            break
+            
+        # Choose leaving variable using minimum ratio test
+        d = B_inv @ A_phase1[:, enter_col]
+        ratios = np.full(m, np.inf)
+        x_B = B_inv @ b
+        
+        for i in range(m):
+            if d[i] > 1e-9:
+                ratios[i] = x_B[i] / d[i]
+                
+        if np.all(ratios == np.inf):
+            raise ValueError("Problem is unbounded in Phase 1.")
+            
+        leave_row = np.argmin(ratios)
+        basis[leave_row] = enter_col
+
+    # Check if objective value (sum of artificial variables) is zero
+    optimal_B_inv = np.linalg.inv(A_phase1[:, basis])
+    final_x_B = optimal_B_inv @ b
+    artificial_sum = sum(final_x_B[i] for i in range(m) if basis[i] >= n)
+    
+    if artificial_sum > 1e-5:
+        return "Infeasible problem: Artificial variables remain positive."
+        
+    return final_x_B, basis
+
+
+
+import numpy as np
+
+def phase_one_simplex(A, b, constraint_types):
+    """
+    Executes Phase 1 of the Two-Phase Simplex Algorithm.
+    
+    Parameters:
+    A (ndarray): Matrix of constraint coefficients (m x n).
+    b (ndarray): Right-hand side vector (m,).
+    constraint_types (list): List of strings ('<=', '=', '>=') for each constraint.
+    
+    Returns:
+    tableau (ndarray): The modified tableau at the end of Phase 1.
+    is_feasible (bool): True if a Basic Feasible Solution exists, False otherwise.
+    basic_vars (list): Indices of variables in the basis at the end of Phase 1.
+    """
+    num_constraints, num_vars = A.shape
+    
+    # 1. Format right-hand side to be non-negative
+    for i in range(num_constraints):
+        if b[i] < 0:
+            b[i] = -b[i]
+            A[i] = -A[i]
+            if constraint_types[i] == "<=":
+                constraint_types[i] = ">="
+            elif constraint_types[i] == ">=":
+                constraint_types[i] = "<="
+
+    # 2. Count required Slack and Artificial variables
+    num_slack = sum(1 for t in constraint_types if t in ["<=", ">="])
+    num_artificial = sum(1 for t in constraint_types if t in ["=", ">="])
+    
+    total_cols = num_vars + num_slack + num_artificial + 1  # +1 for RHS column
+    
+    # 3. Initialize the Tableau
+    # Row 0: Phase 1 Objective Function (Minimize sum of artificial variables)
+    # Rows 1 to m: Constraints
+    tableau = np.zeros((num_constraints + 1, total_cols))
+    
+    slack_idx = num_vars
+    art_idx = num_vars + num_slack
+    basic_vars = []
+    
+    # Populate the tableau constraints
+    for i in range(num_constraints):
+        # Original variables
+        tableau[i + 1, :num_vars] = A[i]
+        # RHS value
+        tableau[i + 1, -1] = b[i]
+        
+        if constraint_types[i] == "<=":
+            tableau[i + 1, slack_idx] = 1.0
+            basic_vars.append(slack_idx)
+            slack_idx += 1
+        elif constraint_types[i] == ">=":
+            tableau[i + 1, slack_idx] = -1.0  # Surplus variable
+            slack_idx += 1
+            tableau[i + 1, art_idx] = 1.0     # Artificial variable
+            basic_vars.append(art_idx)
+            tableau[0, art_idx] = 1.0         # Set coefficient in Phase 1 objective
+            art_idx += 1
+        elif constraint_types[i] == "=":
+            tableau[i + 1, art_idx] = 1.0     # Artificial variable
+            basic_vars.append(art_idx)
+            tableau[0, art_idx] = 1.0         # Set coefficient in Phase 1 objective
+            art_idx += 1
+
+    # 4. Canonical Form Transformation (Make Phase 1 objective row basic coefficients 0)
+    for i in range(num_constraints):
+        if constraint_types[i] in [">=", "="]:
+            tableau[0, :] -= tableau[i + 1, :]
+
+    # 5. Execute Simplex Iterations for Phase 1
+    # Objective is to minimize, but because we subtracted constraint rows, 
+    # we pivot using standard maximization logic on our modified objective row.
+    while True:
+        # Check for optimality: entering variable has the most negative value in Row 0
+        entering_col = np.argmin(tableau[0, :-1])
+        
+        if tableau[0, entering_col] >= -1e-9:
+            break  # Optimal solution for Phase 1 reached
+
+        # Determine the leaving variable via the Minimum Ratio Test
+        min_ratio = float('inf')
+        leaving_row = -1
+        
+        for r in range(1, num_constraints + 1):
+            pivot_val = tableau[r, entering_col]
+            if pivot_val > 1e-9:
+                ratio = tableau[r, -1] / pivot_val
+                if ratio < min_ratio:
+                    min_ratio = ratio
+                    leaving_row = r
+                    
+        if leaving_row == -1:
+            raise ValueError("The problem is unbounded (Phase 1).")
+
+        # Pivot Operation
+        pivot_element = tableau[leaving_row, entering_col]
+        tableau[leaving_row, :] /= pivot_element
+        
+        for r in range(num_constraints + 1):
+            if r != leaving_row:
+                tableau[r, :] -= tableau[r, entering_col] * tableau[leaving_row, :]
+                
+        # Update basis tracker
+        basic_vars[leaving_row - 1] = entering_col
+
+    # 6. Evaluate Feasibility
+    # If the Phase 1 objective function minimum is greater than 0, the LP is infeasible
+    phase_one_obj_val = tableau[0, -1]
+    is_feasible = abs(phase_one_obj_val) < 1e-9
+
+    return tableau, is_feasible, basic_vars
+
+# --- Demonstration / Usage Example ---
+if __name__ == "__main__":
+    # Maximize z = x1 + x2 (Original Objective; unused in Phase 1)
+    # Subject to:
+    # 2x1 + x2 >= 4
+    # x1 + 7x2 >= 7
+    
+    A_matrix = np.array([[2.0, 1.0], 
+                         [1.0, 7.0]])
+    b_vector = np.array([4.0, 7.0])
+    types = [">=", ">="]
+    
+    final_tab, feasible, basis = phase_one_simplex(A_matrix, b_vector, types)
+    
+    print("--- Phase 1 Execution Results ---")
+    print(f"Is Feasible? {feasible}")
+    print(f"Basis at end of Phase 1 (Variable Indices): {basis}")
+    print("Final Phase 1 Tableau:")
+    print(np.round(final_tab, 4))
+
+
+
+import numpy as np
+
+def phase_one_simplex(A, b, constraint_types):
+    """
+    Executes Phase 1 of the Two-Phase Simplex Algorithm.
+    
+    Parameters:
+    A (ndarray): m x n matrix representing constraint coefficients.
+    b (ndarray): Vector of length m representing the right-hand side.
+    constraint_types (list): List of strings ('<=', '=', '>=') for each constraint.
+    
+    Returns:
+    tableau (ndarray): The modified optimal Phase 1 tableau.
+    is_feasible (bool): True if a Basic Feasible Solution exists, False otherwise.
+    basic_vars (list): Indices of the basic variables for each row.
+    """
+    m, n = A.shape
+    b = b.astype(float)
+    A = A.astype(float)
+    
+    # 1. Ensure all RHS values are non-negative
+    for i in range(m):
+        if b[i] < 0:
+            b[i] = -b[i]
+            A[i] = -A[i]
+            if constraint_types[i] == "<=":
+                constraint_types[i] = ">="
+            elif constraint_types[i] == ">=":
+                constraint_types[i] = "<="
+
+    # Count how many slack, surplus, and artificial variables are needed
+    num_slack = constraint_types.count("<=")
+    num_surplus = constraint_types.count(">=")
+    num_artificial = constraint_types.count(">=") + constraint_types.count("=")
+    
+    total_vars = n + num_slack + num_surplus + num_artificial
+    
+    # 2. Initialize Tableau 
+    # Dimensions: (m + 1 rows) x (total_vars + 1 columns for RHS)
+    tableau = np.zeros((m + 1, total_vars + 1))
+    
+    # Fill in original coefficients
+    tableau[:m, :n] = A
+    tableau[:m, -1] = b
+    
+    slack_idx = n
+    surplus_idx = n + num_slack
+    art_idx = n + num_slack + num_surplus
+    
+    basic_vars = []
+    art_var_indices = []
+    
+    # 3. Inject Slack, Surplus, and Artificial Variables
+    for i in range(m):
+        ctype = constraint_types[i]
+        if ctype == "<=":
+            tableau[i, slack_idx] = 1.0
+            basic_vars.append(slack_idx)
+            slack_idx += 1
+        elif ctype == ">=":
+            tableau[i, surplus_idx] = -1.0
+            tableau[i, art_idx] = 1.0
+            art_var_indices.append(art_idx)
+            basic_vars.append(art_idx)
+            surplus_idx += 1
+            art_idx += 1
+        elif ctype == "=":
+            tableau[i, art_idx] = 1.0
+            art_var_indices.append(art_idx)
+            basic_vars.append(art_idx)
+            art_idx += 1
+
+    # 4. Formulate the Phase 1 Objective Function (Minimize sum of artificial variables)
+    # Equivalent to Maximize -Sum(Artificial Variables)
+    for idx in art_var_indices:
+        tableau[-1, idx] = -1.0
+        
+    # 5. Make the initial tableau row-canonical (Zero out objective coefficients for basic variables)
+    for i, bv in enumerate(basic_vars):
+        if bv in art_var_indices:
+            tableau[-1] += tableau[i]
+
+    # 6. Execute Simplex Pivoting Loops
+    while True:
+        # Check for optimality: entering variable has a positive coefficient in the objective row
+        # (Since we are maximizing -Sum(A_i))
+        obj_row = tableau[-1, :-1]
+        entering_col = np.argmax(obj_row)
+        
+        if obj_row[entering_col] <= 1e-9:
+            break  # Optimal Phase 1 achieved
+            
+        # Minimum ratio test to find leaving row
+        min_ratio = float('inf')
+        leaving_row = -1
+        
+        for r in range(m):
+            pivot_val = tableau[r, entering_col]
+            if pivot_val > 1e-9:
+                ratio = tableau[r, -1] / pivot_val
+                if ratio < min_ratio:
+                    min_ratio = ratio
+                    leaving_row = r
+                    
+        if leaving_row == -1:
+            raise ValueError("The problem is unbounded (Phase 1).")
+            
+        # Perform Pivot Operation
+        pivot_element = tableau[leaving_row, entering_col]
+        tableau[leaving_row] /= pivot_element
+        
+        for r in range(m + 1):
+            if r != leaving_row:
+                tableau[r] -= tableau[r, entering_col] * tableau[leaving_row]
+                
+        basic_vars[leaving_row] = entering_col
+
+    # 7. Verify Feasibility
+    # Problem is feasible if the objective value (sum of artificial vars) is exactly 0
+    phase_one_obj_val = tableau[-1, -1]
+    is_feasible = abs(phase_one_obj_val) < 1e-9
+    
+    return tableau, is_feasible, basic_vars
+
+# --- Numerical Verification Example ---
+if __name__ == "__main__":
+    # Min x1 + x2  s.t. 2x1 + x2 >= 4, x1 + 7x2 >= 7
+    A_matrix = np.array([[2, 1], [1, 7]])
+    b_vector = np.array([4, 7])
+    con_types = [">=", ">="]
+    
+    final_tab, feasible, base = phase_one_simplex(A_matrix, b_vector, con_types)
+    
+    print("--- Phase 1 Execution Results ---")
+    print(f"Is Feasible? {feasible}")
+    print(f"Final Objective Value (Should be 0 if feasible): {final_tab[-1, -1]}")
+    print(f"Basic Variables indices for Phase 2: {base}")
+    print("Final Phase 1 Tableau:\n", final_tab)
+
+
+
+import numpy as np
+
+def phase_one_simplex(A, b):
+    """
+    Executes Phase 1 of the Simplex Method to find an initial Basic Feasible Solution (BFS).
+    
+    Treats the identity matrix columns (artificial variables) with an objective vector of ones.
+    Assumes constraints are of the form A * x = b, x >= 0.
+    
+    Parameters:
+    A (ndarray): m x n constraint coefficient matrix.
+    b (ndarray): m-dimensional right-hand side vector.
+    
+    Returns:
+    dict: Strategy status, optimal tableau, basic variable indices, and feasibility flag.
+    """
+    m, n = A.shape
+    
+    # 1. Enforce non-negative right-hand side
+    for i in range(m):
+        if b[i]  1e-9:
+                valid_ratios.append((rhs_vals[i] / pivot_col_vals[i], i))
+        
+        if not valid_ratios:
+            # If no valid pivot exists, the problem is unbounded in Phase 1 context
+            return {"status": "Unbounded/Infeasible setup", "feasible": False}
+            
+        # Select row with the minimum non-negative ratio
+        _, leaving_row_idx = min(valid_ratios, key=lambda x: x[0])
+        pivot_row = leaving_row_idx + 1  # Offset for the objective row
+        
+        # 5. Execute Row Operations (Pivoting)
+        pivot_element = tableau[pivot_row, entering_col]
+        tableau[pivot_row, :] /= pivot_element
+        
+        for r in range(m + 1):
+            if r != pivot_row:
+                factor = tableau[r, entering_col]
+                tableau[r, :] -= factor * tableau[pivot_row, :]
+                
+        # Update basis tracking
+        basis[leaving_row_idx] = entering_col
+
+    # 6. Evaluate Feasibility
+    # If the Phase 1 optimal value is 0, the original problem is feasible
+    phase_one_obj_val = tableau[0, -1]
+    is_feasible = abs(phase_one_obj_val) < 1e-7
+    
+    return {
+        "status": "Phase 1 Complete",
+        "feasible": is_feasible,
+        "tableau": tableau,
+        "basis": basis,
+        "objective_value": phase_one_obj_val
+    }
+
+# --- Verification Example ---
+if __name__ == "__main__":
+    # Example LP system:
+    # x1 + x2 = 3
+    # 2x1 + x2 = 4
+    A_mat = np.array([[1.0, 1.0], 
+                      [2.0, 1.0]])
+    b_vec = np.array([3.0, 4.0])
+    
+    result = phase_one_simplex(A_mat, b_vec)
+    
+    print(f"Is Feasible? {result['feasible']}")
+    print(f"Final Phase 1 Value (Should be 0): {result['objective_value']:.4f}")
+    print(f"Basic Variable Indices for Phase 2: {result['basis']}")
+    print("Final Phase 1 Tableau:\n", np.round(result['tableau'], 4))
+
+
+
