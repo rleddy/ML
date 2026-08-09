@@ -23,34 +23,6 @@ const <R> epsilon = 1.0e-14
     EQ
 }
 
-<VarType> .extends <Enums>{0} {
-    CONSTANT,
-    OBJECTIVE,
-    SLACK,
-    ARTIFICIAL
-}
-
-// A definition of a variable specifically for a simplex method
-//
-<Var> |-> <Var>     :: (<VarType> vtype,<Z> column,<Z> N)
-<Var.push> |-> <>   :: (<R> coef)
-
-//
-<Var> .extends <O> (vtype,column,N) {
-    //
-    O.<Z> row_selector = -1
-    O.<Z> colum_assignment = column
-    O.<R> sum_coefs = 0.0
-    O.<VarType> var_type = vtype
-    //
-    O.Vect<R> coefs = .in .dram Vect<R>.make(N)
-    //
-} .methods {
-    push(coef) {
-        O.coefs.push(coef)
-    }
-}
-
 
 
 <Constraint> |-> <Constraint>   :: (Vect<R> coefs, <Ordering> ord, <R> bound)
@@ -90,189 +62,6 @@ const <R> epsilon = 1.0e-14
 }
 
 
-// Vars and Initialization
-//
-
-Map<Z,Var>  rows         // variables taken out of columns and placed into a row
-Map<Z,Var>  active_columns
-Map<Z,B>    active_columns_onoff
-//
-Map<Var,Z>  var_order    // assign column index to vars 
-Set<Var>    all_vars
-
-Vect<R> g_coefs = .from.config.object_coefs
-//
-<Objective> original_objective = .in .dram <Objective>(g_coefs)
-<Objective> first_phase_objective = .in .dram <Objective>(Vect<R>(3*g_coefs.N).fill(0.0))  // enough space for any problem type
-//
-<Z> M = .from.config.M
-Vect<Constraint> constraints = .in .dram <Constraint>.make(M)  // M ... the number of constraints
-<Var> constants = .in .dram <Var>(CONSTANT,Vect<R>(M+2).fill(0.0)) // will store constaint values plus objectives
-
-
-// CONSTRAINTS
-Z<[,)> ci = [0,M)
-.for up ci {
-    //
-    Vect<R> coefs = .from.config.constraints[ci].coefs
-    <Ordering> ord  = .from.config.constraints[ci].ordering
-    <R> bound = .from.config.constraints[ci].bound
-    //
-    .in .{constraints}(<Constraint>)(coefs,ord,bound)
-}
-//
-constraints.sort_by(<Constraint>.ordering)
-
-// VARS
-Vect<Var> g_vars = .in .dram Vect<Var>.make(.from.config.object_coefs.N)
-
-Z<[,)> vi = [0,g_vars.N)
-<Z> M = .from.config.M
-.for up vi {
-    <Var> var = .in .{g_vars}(<Var>)(OBJECTIVE,vi,M)
-   var_order[var] = vi
-}
-
-// SLACK VARS
-Vect<Var> g_slack_vars = .in .dram Vect<Var>.make(M)        // this is space allocation, but the actual N will be less
-
-// ARTIFICIAL VARS
-Vect<Var> g_artificial_vars = .in .dram Vect<Var>.make(M)   // this is space allocation, but the actual N will be less
-
-// after setting up slack and artificial
-all_vars = g_vars .U g_slack_vars .U g_artificial_vars
-
-
-fun build_phase_one_simplex() {
-    //
-    // column of coefficients for each var
-    .for each ( constraints c ) {
-        .for each ( g_vars var ) {
-            <Z> i = var_order[var]
-            <R> val = var.coefs.push(c.coefs[i])
-            var.sum_coefs += val
-        }
-    }
-    //
-    //  adding the coefs of the original objective
-    .for each ( g_vars var ) {
-        <Z> i = var_order[var]
-        <R> val = original_objective[i]
-        var.coefs.push(val)
-        var.sum_coefs += val
-    }
-    // storing the constants from the constraints
-    .for each ( constraints c ) {
-        <R> val = c.constant
-        constants.push(val)
-        constants.sum_coefs += val
-    }
-    <R> val = 0.0
-    constants.coefs.push(val)  // place holder for the original objective
-    //
-
-    let @(fpo) = first_phase_objective  // this will be just an alias
-    .for each (g_vars var) {
-        <Z> i = var_order[var]
-        fpo.coefs[i] = -(var.sum_coefs)
-    }
-    //
-    .for_each (g_slack_vars svar) {
-        <Z> i = var_order[svar]
-        fpo.coefs[i] = (svar.row_selector < 0) ? 1 : -1
-        .if ( svar.row_selector < 0 )  {
-            <Z> j = svar.row_selector
-            rows[j] = svar
-        }
-    }
-    //
-    .for_each (g_artificial_vars avar) {
-        <Z> i = var_order[avar]
-        fpo.coefs[i] = 0.0
-        <Z> j = var.row_selector
-        rows[j] = var
-    }
-    .for each ( all_vars var ) {
-        .if ( var.row_selector < 0 ) {
-            <Z> i = var_order[var]
-            active_columns[i] = var
-            active_columns_onoff[i] = 1
-        }
-    }
-    //
-}
-
-
-
-fun prep_phase_two_objective() {
-    //
-    all_vars = all_vars \ g_artificial_vars
-    .for each ( all_vars var ) {
-        <Z> i = var_order[var]
-        original_objective.coefs[i] = var.coefs.pop()
-    }
-    //
-    original_objective.coefs[original_objective.coefs.N-1] = constants.coefs.pop()
-}
-
-
-
-
-fun simplex_phase_one_swap(row_var,var) {
-    row_var.row_selector = -1
-    var.row_selector = l
-    rows[row] = var
-    active_columns_onoff[k] = 0
-    .if ( row_var.var_type != ARTIFICIAL ) {
-        <Z> ca = row_var.colum_assignment
-        active_columns[ca] = row_var
-        active_columns_onoff[ca] = 1
-    } else {
-        delete active_columns[k]  // this column does not return to the query
-    }
-}
-
-
-fun simplex_swap(row_var,var) {
-    row_var.row_selector = -1
-    var.row_selector = l
-    rows[row] = var
-    active_columns_onoff[k] = 0
-    <Z> ca = row_var.colum_assignment
-    active_columns[ca] = row_var
-    active_columns_onoff[ca] = 1
-}
-
-
-// just notes at the moment
-fun simplex_phase_one() {  // one loop
-    //
-    let measure = (x,lastx) => { min(max(0,x),lastx) }
-    <Z> col = argmin(first_phase_objective.coefs.|active_columns_onoff,measure)!UNBOUNDED
-    .if ( check_solved(col,first_phase_objective) ) {
-        // clean out artificials and keep checking for degeneration
-    }
-    let row = least_positive_ratio(var,constants)!DEGENERATE
-    <Var> var = active_columns[k]
-    <Var> row_var = rows[row]
-    <R> pivot = var.coefs[row]
-    //
-    gaussian_rotation(pivot,row,col,active_columns,active_columns_onoff,constants)
-    //
-    simplex_phase_one_swap(row_var,var)
-}
-
-
-
-
-
-
-
-
-
-
-
-
 <simplex_build> |-> <Matrix<R>,<SimplexResult>> :: (<Objective> objective, List<Contraint> contraints)
 //
 //
@@ -299,9 +88,9 @@ fun simplex_build(objective,contraints) {
     <Z> aritificial_count = no_slack_count + neg_slack_count
     <Z> slack_variabl_count = pos_slack_count + neg_slack_count
     //
-    Matrix<R> c_leqs = .in .ephemeral Matrix<R>.make(objective.coefs.N + slack_variabl_count)
-    Matrix<R> c_geqs = .in .ephemeral Matrix<R>.make(objective.coefs.N + slack_variabl_count)
-    Matrix<R> c_eqs  = .in .ephemeral Matrix<R>.make(objecc_leqstive.coefs.N + slack_variabl_count)
+    Matrix<R> c_leqs = .in .ephemeral Matrix<R>.make(0,objective.coefs.N + slack_variabl_count)
+    Matrix<R> c_geqs = .in .ephemeral Matrix<R>.make(0,objective.coefs.N + slack_variabl_count)
+    Matrix<R> c_eqs  = .in .ephemeral Matrix<R>.make(0,objecc_leqstive.coefs.N + slack_variabl_count)
     //
     <Z> N = contraints.coefs.N
     <Z> slack_offset = 1
