@@ -1,0 +1,100 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import norm as sparse_norm
+
+class SimplePDHG:
+    """
+    Simplified PDHG solver for LP in standard form:
+        min c'x  s.t.  Ax = b, x >= 0
+    """
+    def __init__(self, c, A, b, eta_factor=0.9):
+        self.c = c
+        self.A = csr_matrix(A)  # Use sparse matrix
+        self.b = b
+        self.n = len(c)
+        self.m = len(b)
+        
+        # Set step-size: eta < 1/||A||
+        A_norm = sparse_norm(self.A, ord=2)  # Spectral norm
+        self.eta = eta_factor / A_norm
+        self.sigma = self.eta  # Equal step-sizes
+        
+    def solve(self, max_iter=10000, tol=1e-6):
+        # Initialize at zero
+        x = np.zeros(self.n)
+        y = np.zeros(self.m)
+        
+        # Track convergence
+        gaps = []
+        
+        for k in range(max_iter):
+            # Store old x for extrapolation
+            x_old = x.copy()
+            
+            # Primal update: x^{k+1} = proj_{R+}(x^k + eta*A'y^k - eta*c)
+            x = x + self.eta * (self.A.T @ y - self.c)
+            x = np.maximum(x, 0)  # Project to non-negative orthant
+            
+            # Dual update with extrapolation: 
+            # y^{k+1} = y^k - sigma*A(2x^{k+1} - x^k) + sigma*b
+            x_extrap = 2*x - x_old
+            y = y - self.sigma * (self.A @ x_extrap - self.b)
+            
+            # Compute duality gap every 10 iterations
+            if k % 10 == 0:
+                primal_obj = self.c @ x
+                dual_obj = self.b @ y
+                gap = abs(primal_obj - dual_obj) / (1 + abs(primal_obj))
+                gaps.append(gap)
+                
+                if gap < tol:
+                    print(f"Converged in {k} iterations")
+                    break
+        
+        return x, y, gaps
+
+# Example: Solve a small LP
+n, m = 100, 50
+np.random.seed(42)
+
+# Generate random LP: min c'x s.t. Ax = b, x >= 0
+A = np.random.randn(m, n)
+c = np.random.randn(n)
+x_true = np.abs(np.random.randn(n))  # Make feasible
+b = A @ x_true
+
+solver = SimplePDHG(c, A, b)
+x_sol, y_sol, gaps = solver.solve()
+
+# Plot convergence
+import matplotlib.pyplot as plt
+plt.semilogy(gaps)
+plt.xlabel('Iteration (x10)')
+plt.ylabel('Relative duality gap')
+plt.title('PDHG Convergence')
+plt.grid(True)
+plt.show()
+
